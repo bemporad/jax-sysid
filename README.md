@@ -63,10 +63,13 @@ where $z=(\theta,x_0)$ and $\theta$ collecting the entries of $A,B,C,D$.
 
 The regularization term $r(z)$ includes the following components:
 
-$\frac{1}{2} \rho_\theta \|\theta\|_2^2 $, 
-$\rho_{x_0} \|x_0\|_2^2$, 
-$\tau \left\|z\right\|_1$,
-$\tau_g\sum_{i=1}^{n_u} \|I_iz\|_2$
+$$\frac{1}{2} \rho_{\theta} \|\theta\|_2^2 $$
+
+$$\rho_{x_0} \|x_0\|_2^2$$
+
+$$\tau \left\|z\right\|_1$$
+
+$$\tau_g\sum_{i=1}^{n_u} \|I_iz\|_2$$
 
 with $\rho_\theta>0$, $\rho_{x_0}>0$, $\tau\geq 0$, $\tau_g\geq 0$. See examples below.
 

@@ -45,18 +45,26 @@ pip install jax-sysid
 ### Linear state-space models
 
 Given input/output training data $(u_0,y_0)$, $\ldots$, $(u_{N-1},y_{N-1})$, $u_k\in R^{n_u}$, $y_k\in R^{n_y}$, we want to identify a state-space model in the following form
+
 $$        x_{k+1}=Ax_k+Bu_k$$
+
 $$        \hat y_k=Cx_k+Du_k $$
+
 where $k$ denotes the sample instant, $x_k\in R^{n_x}$ is the vector of hidden states, and
 $A,B,C,D$ are matrices of appropriate dimensions to be learned.
 
 The training problem to solve is
+
 $$\min_{z}r(z)+\frac{1}{N}\sum_{k=0}^{N-1} \|y_{k}-Cx_k-Du_k\|_2^2$$
+
 $$\mbox{s.t.}\ x_{k+1}=Ax_k+Bu_k, \ k=0,\ldots,N-2$$
+
 where $z=(\theta,x_0)$ and $\theta$ collecting the entries of $A,B,C,D$.
 
 The regularization term $r(z)$ can include the following components:
+
 $$    r(z)=\frac{1}{2}\left(\rho_\theta\left\|\theta\right\|_2^2+\rho_{x_0}\|x_0\|_2^2\right)+\tau\left\|z\right\|_1+\tau_g\sum_{i=1}^{n_u}\|I_iz\|_2$$
+
 with $\rho_\theta>0$, $\rho_{x_0}>0$, $\tau\geq 0$, $\tau_g\geq 0$. See examples below.
 
 Let's start training a discrete-time linear model $(A,B,C,D)$ on a sequence of inputs $U=[u_0\ \ldots\ u_{N-1}]'$ and output $Y=[y_0\ \ldots\ y_{N-1}]'$, with regularization $\rho_\theta=10^{-2}$, $\rho_{x_0}=10^{-3}$, running the L-BFGS solver for at most 1000 function evaluations:
@@ -144,18 +152,26 @@ In case the initial state $x_0$ is trainable, one initial state per experiment i
 <a name="nonlinear"></a>
 ### Nonlinear system identification and RNNs
 Given input/output training data $(u_0,y_0)$, $\ldots$, $(u_{N-1},y_{N-1})$, $u_k\in R^{n_u}$, $y_k\in R^{n_y}$, we want to identify a nonlinear parametric state-space model in the following form
+
 $$        x_{k+1}=f(x_k,u_k,\theta)$$
+
 $$        \hat y_k=g(x_k,u_k,\theta)$$
+
 where $k$ denotes the sample instant, $x_k\in R^{n_x}$ is the vector of hidden states, and $\theta$ collects the trainable parameters of the model.
 
 As for the linear case, the training problem to solve is
+
 $$  \min_{z}r(z)+\frac{1}{N}\sum_{k=0}^{N-1} \|y_{k}-g(x_k,u_k,\theta)\|_2^2$$
+
 $$\mbox{s.t.}\ x_{k+1}=f(x_k,u_k,\theta),\ k=0,\ldots,N-2$$
+
 where $z=(\theta,x_0)$. The regularization term $r(z)$ is the same as in the linear case.
 
 For example, let us consider the following residual RNN model without input/output feedthrough:
 
-$$ x_{k+1}=Ax_k+Bu_k+f_x(x_k,u_k,\theta_x)$$ $$ \hat y_k=Cx_k+f_y(x_k,\theta_y)$$
+$$ x_{k+1}=Ax_k+Bu_k+f_x(x_k,u_k,\theta_x)$$ 
+
+$$ \hat y_k=Cx_k+f_y(x_k,\theta_y)$$
 
 where $f_x$, $f_y$ are feedforward shallow neural networks, and let $z$ collects the coefficients in $A,B,C,D,\theta_x,\theta_y$. We want to train $z$ by running 1000 Adam iterations followed by at most 1000 L-BFGS function evaluations:
 
@@ -264,7 +280,9 @@ $$
 <a name="static"></a>
 ### Static models and nonlinear regression
 The same optimization algorithms used to train dynamical models can be used to train static models, i.e., to solve the nonlinear regression problem:
+
 $$  \min_{z}r(z)+\frac{1}{N}\sum_{k=0}^{N-1} \|y_{k}-f(u_k,\theta)\|_2^2$$
+
 where $z=\theta$ is the vector of model parameters to train and $r(z)$ admits the same
 regularization terms as in the case of dynamical models.
 

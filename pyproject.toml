@@ -8,7 +8,7 @@ version = "0.1.0"
 authors = [
   { name="Alberto Bemporad", email="alberto.bemporad@imtlucca.it" },
 ]
-description = "jax-sysid - A Python package for linear subspace identification, nonlinear system identification, and nonlinear regression using Jax."
+description = "jax-sysid - A Python package for linear and nonlinear system identification and nonlinear regression using Jax."
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = ["numpy","scipy","jax","jaxopt","flax","tqdm","matplotlib","pmlb"]

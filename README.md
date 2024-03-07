@@ -28,7 +28,9 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
 The package implements the approach described in the following paper:
 
 <a name="cite-Bem24"><a>
-> [1] A. Bemporad, "[Linear and nonlinear system identification under $\ell_1$- and group-Lasso regularization via L-BFGS-B](http://cse.lab.imtlucca.it/~bemporad/publications/papers/arxiv-jax-sysid.pdf)," submitted for publication. Also available on arXiv, 2024. [[bib entry](#ref1)]
+> [1] A. Bemporad, "[Linear and nonlinear system identification under $\ell_1$- and group-Lasso regularization via L-BFGS-B](
+http://arxiv.org/abs/2403.03827)," submitted for publication. Available on arXiv at <a href="http://arxiv.org/abs/2403.03827">
+http://arxiv.org/abs/2403.03827</a>, 2024. [[bib entry](#ref1)]
 
 
 <a name="install"></a>
@@ -354,7 +356,8 @@ This software is distributed without any warranty. Please cite the paper below i
 @article{Bem24,
     author={A. Bemporad},
     title={Linear and nonlinear system identification under $\ell_1$- and group-{Lasso} regularization via {L-BFGS-B}},
-    note = {submitted for publication. Also available on arXiv},
+    note = {submitted for publication. Also available on arXiv
+    at \url{http://arxiv.org/abs/2403.03827}},
     year=2024
 }
 ```

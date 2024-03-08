@@ -39,7 +39,7 @@ C = np.random.randn(ny, nx)
 
 
 def truesystem(x0, U, qx, qy):
-    # system generating the traing and test dataset
+    # system generating the training and test dataset
     N_train = U.shape[0]
     x = x0.copy()
     Y = np.empty((N_train, ny))

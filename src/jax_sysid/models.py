@@ -14,7 +14,7 @@ from functools import partial
 from scipy.linalg import solve
 import tqdm
 import sys
-from jax_sysid.utils import lbfgs_options
+from jax_sysid.utils import lbfgs_options, vec_reshape
 
 epsil_lasso = 1.e-16  # tolerance used in groupLassoReg functions to prevent 0/0 = nan in the Jacobian vector when the argument is the zero vector
 default_small_tau_th = 1.e-8  # add some small L1-regularization.
@@ -279,6 +279,7 @@ class Model(object):
         self.sat_activated = None
         self.sparsity = None
         self.group_lasso_fcn = None
+        self.custom_regularization = None
 
     def predict(self, x0, U, qx=0., qy=0.):
         """
@@ -302,7 +303,7 @@ class Model(object):
         X : ndarray
             State trajectory (N-by-nx numpy array).
         """
-        U = np.atleast_2d(U)
+        U = vec_reshape(U)
         x = x0.copy().reshape(-1)
         nx = self.nx
         N = U.shape[0]
@@ -317,7 +318,7 @@ class Model(object):
             x = self.state_fcn(x, u, self.params) + qx * np.random.randn(nx)
         return Y, X
 
-    def loss(self, output_loss=None, rho_x0=0.001, rho_th=0.01, tau_th=0.0, tau_g=0.0, group_lasso_fcn=None, zero_coeff=0., xsat=1000., train_x0=True):
+    def loss(self, output_loss=None, rho_x0=0.001, rho_th=0.01, tau_th=0.0, tau_g=0.0, group_lasso_fcn=None, zero_coeff=0., xsat=1000., train_x0=True, custom_regularization=None):
         """Define the overall loss function for system identification
 
         Parameters
@@ -341,6 +342,9 @@ class Model(object):
             Saturation value for state variables, forced during training to avoid numerical issues.
         train_x0 : bool
             If True, also train the initial state x0, otherwise set x0=0 and ignore rho_x0.
+        custom_regularization : function
+            Custom regularization term, a function of the model parameters and initial state
+            custom_regularization(params, x0).            
         """
         if output_loss is None:
             def output_loss(Yhat, Y): return jnp.sum((Yhat-Y)**2)/Y.shape[0]
@@ -353,6 +357,7 @@ class Model(object):
         self.xsat = xsat
         self.train_x0 = train_x0
         self.group_lasso_fcn = group_lasso_fcn
+        self.custom_regularization = custom_regularization
         return
 
     def optimization(self, adam_eta=None, adam_epochs=None, lbfgs_epochs=None, iprint=None,
@@ -475,12 +480,12 @@ class Model(object):
                 raise (Exception(
                     "\033[1mPlease provide the same number of input and output traces\033[0m"))
             for i in range(Nexp):
-                U[i] = np.atleast_2d(U[i])
-                Y[i] = np.atleast_2d(Y[i])
+                U[i] = vec_reshape(U[i])
+                Y[i] = vec_reshape(Y[i])
         else:
             Nexp = 1
-            U = [np.atleast_2d(U)]
-            Y = [np.atleast_2d(Y)]
+            U = [vec_reshape(U)]
+            Y = [vec_reshape(Y)]
         nu = U[0].shape[1]
         ny = Y[0].shape[1]
 
@@ -510,6 +515,7 @@ class Model(object):
 
         isL1reg = tau_th > 0
         isGroupLasso = (tau_g > 0) and (self.group_lasso_fcn is not None)
+        isCustomReg = self.custom_regularization is not None
 
         if not isL1reg and isGroupLasso:
             tau_th = default_small_tau_th  # add some small L1-regularization, see Lemma 2
@@ -603,6 +609,8 @@ class Model(object):
                             cost += tau_th*l1reg(th)
                         if isGroupLasso:
                             cost += tau_g*self.group_lasso_fcn(th, x0)
+                        if isCustomReg:
+                            cost += self.custom_regularization(th, x0)
                         return cost
                 else:
                     @jax.jit
@@ -612,6 +620,8 @@ class Model(object):
                             cost += tau_th*l1reg(z)
                         if isGroupLasso:
                             cost += tau_g*self.group_lasso_fcn(z, x0)
+                        if isCustomReg:
+                            cost += self.custom_regularization(z, x0)
                         return cost
 
                 def JdJ(z):
@@ -639,11 +649,15 @@ class Model(object):
                                 cost = loss(th, x0) + self.rho_x0 * \
                                     sum([jnp.sum(x0i**2)
                                         for x0i in x0]) + self.rho_th*l2reg(th)
+                                if isCustomReg:
+                                    cost += self.custom_regularization(th, x0)
                                 return cost
                         else:
                             @jax.jit
                             def J(z):
                                 cost = loss(z, x0) + self.rho_th*l2reg(z)
+                                if isCustomReg:
+                                    cost += self.custom_regularization(z, x0)
                                 return cost
 
                         solver = jaxopt.ScipyMinimize(
@@ -661,6 +675,8 @@ class Model(object):
                                       in zip(z[0:nth], z[nth:2 * nth])]
                                 cost = loss(th, x0) + self.rho_x0 * sum([jnp.sum(x0i**2) for x0i in x0]) + self.rho_th*l2reg(z[0:nth]) + self.rho_th*l2reg(
                                     z[nth:2 * nth]) + tau_th*linreg(z[0:nth]) + tau_th*linreg(z[nth:2 * nth])
+                                if isCustomReg:
+                                    cost += self.custom_regularization(th, x0)
                                 return cost
                         else:
                             @jax.jit
@@ -669,6 +685,8 @@ class Model(object):
                                       in zip(z[0:nth], z[nth:2 * nth])]
                                 cost = loss(th, x0) + self.rho_th*l2reg(z[0:nth]) + self.rho_th*l2reg(
                                     z[nth:2 * nth]) + tau_th*linreg(z[0:nth]) + tau_th*linreg(z[nth:2 * nth])
+                                if isCustomReg:
+                                    cost += self.custom_regularization(th, x0)
                                 return cost
 
                         solver = jaxopt.ScipyBoundedMinimize(
@@ -698,6 +716,8 @@ class Model(object):
                                 cost += tau_g * \
                                     self.group_lasso_fcn(
                                         [z1 + z2 for (z1, z2) in zip(z[0:nth], z[nth:2 * nth])], x0)
+                            if isCustomReg:
+                                cost += self.custom_regularization(th, x0)
                             return cost
                     else:
                         @jax.jit
@@ -710,6 +730,8 @@ class Model(object):
                                 cost += tau_g * \
                                     self.group_lasso_fcn(
                                         [z1 + z2 for (z1, z2) in zip(z[0:nth], z[nth:2 * nth])], x0)
+                            if isCustomReg:
+                                cost += self.custom_regularization(th, x0)
                             return cost
 
                     solver = jaxopt.ScipyBoundedMinimize(
@@ -1294,7 +1316,8 @@ class StaticModel(object):
         self.t_solve = None
         self.sparsity = None
         self.group_lasso_fcn = None
-
+        self.custom_regularization = None
+        
     def predict(self, U):
         """
         Evaluate the static model as a function of the input.
@@ -1309,10 +1332,10 @@ class StaticModel(object):
         Y : ndarray
             Output signal.
         """
-        U = np.atleast_2d(U)
+        U = vec_reshape(U)
         return self.output_fcn(U, self.params)
 
-    def loss(self, output_loss=None, rho_th=0.01, tau_th=0.0, tau_g=0.0, group_lasso_fcn=None, zero_coeff=0.e-4):
+    def loss(self, output_loss=None, rho_th=0.01, tau_th=0.0, tau_g=0.0, group_lasso_fcn=None, zero_coeff=0.e-4, custom_regularization=None):
         """Define the overall loss function for training the model.
 
         Parameters
@@ -1330,6 +1353,9 @@ class StaticModel(object):
             function defining the group-Lasso penalty on the model parameters "params", minimized as tau_g*sum(||[params;x]_i||_2).
         zero_coeff : _type_
             Entries smaller than zero_coeff are set to zero. Useful when tau_th>0 or tau_g>0.
+        custom_regularization : function
+            Custom regularization term, a function of the model parameters 
+            custom_regularization(params, x0).            
         """
         if output_loss is None:
             def output_loss(Yhat, Y): return jnp.sum((Yhat - Y)**2)/Y.shape[0]
@@ -1338,7 +1364,8 @@ class StaticModel(object):
         self.tau_th = tau_th
         self.tau_g = tau_g
         self.zero_coeff = zero_coeff
-        self.group_lasso_fcn = group_lasso_fcn
+        self.group_lasso_fcn = group_lasso_fcn        
+        self.custom_regularization=custom_regularization
         return
 
     def optimization(self, adam_eta=None, adam_epochs=None, lbfgs_epochs=None, iprint=None, memory=None, lbfgs_tol=None):
@@ -1412,8 +1439,8 @@ class StaticModel(object):
         adam_epochs = self.adam_epochs
         lbfgs_epochs = self.lbfgs_epochs
 
-        U = np.atleast_2d(U)
-        Y = np.atleast_2d(Y)
+        U = vec_reshape(U)
+        Y = vec_reshape(Y)
 
         if self.params is None:
             raise (Exception(
@@ -1426,6 +1453,7 @@ class StaticModel(object):
 
         isL1reg = tau_th > 0
         isGroupLasso = (tau_g > 0) and (self.group_lasso_fcn is not None)
+        isCustomReg = (self.custom_regularization is not None)
 
         if not isL1reg and isGroupLasso:
             tau_th = default_small_tau_th
@@ -1480,7 +1508,7 @@ class StaticModel(object):
                 float
                     The loss value.
                 """
-                Yhat = self.output_fcn(U, th)
+                Yhat = self.output_fcn(U, th).reshape(-1,1)
                 cost = self.output_loss(Yhat, Y)
                 return cost
 
@@ -1494,6 +1522,8 @@ class StaticModel(object):
                         cost += tau_th*l1reg(z)
                     if isGroupLasso:
                         cost += tau_g*self.group_lasso_fcn(z)
+                    if isCustomReg:
+                        cost += self.custom_regularization(z)
                     return cost
 
                 def JdJ(z):
@@ -1515,6 +1545,8 @@ class StaticModel(object):
                     if not isL1reg:
                         def J(z):
                             cost = loss(z) + self.rho_th*l2reg(z)
+                            if isCustomReg:
+                                cost += self.custom_regularization(z)
                             return cost
 
                         solver = jaxopt.ScipyMinimize(
@@ -1530,6 +1562,8 @@ class StaticModel(object):
                                   in zip(z[0:nth], z[nth:2 * nth])]
                             cost = loss(th) + self.rho_th*l2reg(z[0:nth]) + self.rho_th*l2reg(
                                 z[nth:2 * nth]) + tau_th*linreg(z[0:nth]) + tau_th*linreg(z[nth:2 * nth])
+                            if isCustomReg:
+                                cost += self.custom_regularization(th)
                             return cost
 
                         solver = jaxopt.ScipyBoundedMinimize(
@@ -1554,6 +1588,8 @@ class StaticModel(object):
                             cost += tau_g * \
                                 self.group_lasso_fcn(
                                     [z1 + z2 for (z1, z2) in zip(z[0:nth], z[nth:2 * nth])])
+                        if isCustomReg:
+                            cost += self.custom_regularization(th)
                         return cost
 
                     solver = jaxopt.ScipyBoundedMinimize(

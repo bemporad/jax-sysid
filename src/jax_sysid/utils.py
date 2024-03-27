@@ -85,6 +85,24 @@ def unscale(Xs, offset, gain):
     """
     return Xs/gain+offset
 
+def vec_reshape(y):
+    """Reshape an array to a 2D array if it is 1D.
+    
+    (C) 2024 A. Bemporad
+    
+    Parameters
+    ----------
+    y : ndarray
+        Input array
+
+    Returns:
+    --------
+    y : ndarray
+        Possibly reshaped array
+    """
+    if len(y.shape) == 1:
+        y = y.reshape(-1, 1)
+    return y                
 
 def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
     """Compute R2-score, best fit rate, or accuracy score on (possibly multi-dimensional) 
@@ -114,8 +132,20 @@ def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
     msg : string
         Printout summarizing computed performance results
         """
-
-    ny = np.atleast_2d(Y_train).shape[1]
+        
+    Y_train = vec_reshape(Y_train)
+    Yhat_train = vec_reshape(Yhat_train)
+    Y_test = vec_reshape(Y_test)
+    Yhat_test = vec_reshape(Yhat_test)
+    
+    if Y_train.shape != Yhat_train.shape:
+        raise ValueError(
+            "Inconsistent dimensions between reference and predicted training output data.")
+    if Y_test.shape != Yhat_test.shape:
+        raise ValueError(
+            "Inconsistent dimensions between reference and predicted test output data.")
+    
+    ny = Y_train.shape[1]
     score_train = np.zeros(ny)
     score_test = np.zeros(ny)
     msg = ''

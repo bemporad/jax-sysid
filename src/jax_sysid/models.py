@@ -239,7 +239,7 @@ class Model(object):
             Use state_fcn=None and output_fcn=None to get a linear model.
         y_in_x : bool, optional
             If True, the output is equal to the first ny states, i.e., y = [I 0]x.
-            This forces nx>=ny and feedthrough=False. The output function output_fcn is ignored.
+            This forces nx>=ny. The output function output_fcn is ignored.
         Ts : float, optional
             Sample time (default: 1 time unit).
         """
@@ -252,7 +252,9 @@ class Model(object):
 
         if y_in_x:
             self.nx = max(nx, ny)  # force nx>=ny
-            self.output_fcn = None  # ignore output function
+            def output_fcn(x, u, params): 
+                return x[0:ny]
+            self.output_fcn = output_fcn 
         self.isLinear = False  # By default, the model is nonlinear
         self.Ts = Ts  # sample time
 
@@ -308,14 +310,29 @@ class Model(object):
         nx = self.nx
         N = U.shape[0]
         ny = self.ny
-        Y = np.empty((N, ny))
-        X = np.empty((N, nx))
-        for k in range(N):
-            u = U[k]
-            Y[k] = self.output_fcn(x, u, self.params) + \
-                qy * np.random.randn(ny)
-            X[k] = x
-            x = self.state_fcn(x, u, self.params) + qx * np.random.randn(nx)
+        
+        use_scan = (qx is None or qx == 0.) and (qy is None or qy == 0.)
+             
+        if not use_scan:
+            # simulate with noise in a for-loop
+            Y = np.empty((N, ny))
+            X = np.empty((N, nx))
+            for k in range(N):
+                u = U[k]
+                Y[k] = self.output_fcn(x, u, self.params) + \
+                    qy * np.random.randn(ny)
+                X[k] = x
+                x = self.state_fcn(x, u, self.params) + qx * np.random.randn(nx)
+        else:
+            @jax.jit
+            def model_step(x, u):
+                y = jnp.hstack((self.output_fcn(x, u, self.params),x))
+                x = self.state_fcn(x, u, self.params).reshape(-1)
+                return x, y
+            _, YX = jax.lax.scan(model_step, x0, U)
+            Y = YX[:,0:ny]
+            X = YX[:,ny:]
+
         return Y, X
 
     def loss(self, output_loss=None, rho_x0=0.001, rho_th=0.01, tau_th=0.0, tau_g=0.0, group_lasso_fcn=None, zero_coeff=0., xsat=1000., train_x0=True, custom_regularization=None):
@@ -1335,7 +1352,7 @@ class StaticModel(object):
         U = vec_reshape(U)
         return self.output_fcn(U, self.params)
 
-    def loss(self, output_loss=None, rho_th=0.01, tau_th=0.0, tau_g=0.0, group_lasso_fcn=None, zero_coeff=0.e-4, custom_regularization=None):
+    def loss(self, output_loss=None, rho_th=0.01, tau_th=0.0, tau_g=0.0, group_lasso_fcn=None, zero_coeff=0., custom_regularization=None):
         """Define the overall loss function for training the model.
 
         Parameters
@@ -1603,7 +1620,8 @@ class StaticModel(object):
                     iter_num = state.iter_num
                     Jopt = state.fun_val
 
-                print('L-BFGS-B done in %d iterations.' % iter_num)
+                if self.iprint > -1:
+                    print('L-BFGS-B done in %d iterations.' % iter_num)
 
             else:
                 raise (Exception("\033[1mUnknown solver\033[0m"))

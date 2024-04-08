@@ -199,9 +199,11 @@ def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
                         Yhat_test[:, i] - Y_test[:, i]) / np.sqrt(nY_test2))
             if isRMSE:
                 if use_training:
-                    score_train[i] = np.sqrt(nY_train2/Y_train.shape[0])
+                    score_train[i] = np.sqrt((np.sum((Yhat_train[:, i] -
+                                                      Y_train[:, i]) ** 2))/Y_train.shape[0])
                 if use_test:
-                    score_test[i] = np.sqrt(nY_test2/Y_test.shape[0])
+                    score_test[i] = np.sqrt(np.sum((Yhat_test[:, i] -
+                                                    Y_test[:, i]) ** 2)/Y_test.shape[0])
             elif isAcc:
                 if use_training:
                     score_train[i] = np.mean(
@@ -239,9 +241,11 @@ def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
                                                          Y_test) / np.sqrt(nY_test2))
         elif isRMSE:
             if use_training:
-                score_train = np.sqrt(nY_train2/Y_train.shape[0])
+                score_train = np.sqrt(np.sum((Yhat_train -
+                                      Y_train) ** 2)/Y_train.shape[0])
             if use_test:
-                score_test = np.sqrt(nY_test2/Y_test.shape[0])
+                score_test = np.sqrt(np.sum((Yhat_test -
+                                             Y_test) ** 2)/Y_test.shape[0])
         elif isAcc:
             if use_training:
                 score_train = np.mean(Yhat_train == Y_train)*100

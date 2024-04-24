@@ -329,7 +329,7 @@ class Model(object):
                 y = jnp.hstack((self.output_fcn(x, u, self.params),x))
                 x = self.state_fcn(x, u, self.params).reshape(-1)
                 return x, y
-            _, YX = jax.lax.scan(model_step, x0, U)
+            _, YX = jax.lax.scan(model_step, x, U)
             Y = YX[:,0:ny]
             X = YX[:,ny:]
 

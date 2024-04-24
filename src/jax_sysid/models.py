@@ -352,7 +352,7 @@ class Model(object):
         tau_g : float
             group-Lasso regularization penalty
         group_lasso_fcn : function
-            function defining the group-Lasso penalty on the model parameters "params" and initial state "x0", minimized as tau_g*sum(||[params;x]_i||_2). For linear models, you can use the "group_lasso_x" or "group_lasso_u" methods.
+            function f(params,x0) defining the group-Lasso penalty on the model parameters "params" and initial state "x0", minimized as tau_g*sum(||[params;x0]_i||_2). For linear models, you can use the "group_lasso_x" or "group_lasso_u" methods.
         zero_coeff : _type_
             Entries smaller than zero_coeff are set to zero. Useful when tau_th>0 or tau_g>0.
         xsat : float
@@ -1367,7 +1367,7 @@ class StaticModel(object):
         tau_g : float
             group-Lasso regularization penalty
         group_lasso_fcn : function
-            function defining the group-Lasso penalty on the model parameters "params", minimized as tau_g*sum(||[params;x]_i||_2).
+            function f(params) defining the group-Lasso penalty on the model parameters "params", minimized as tau_g*sum(||params_i||_2).
         zero_coeff : _type_
             Entries smaller than zero_coeff are set to zero. Useful when tau_th>0 or tau_g>0.
         custom_regularization : function

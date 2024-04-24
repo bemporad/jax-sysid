@@ -173,7 +173,7 @@ def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
 
     if ny > 1:
         for i in range(ny):
-            if isR2 or isBFR or isRMSE:
+            if isR2 or isBFR:
                 if use_training:
                     nY_train2 = np.sum(
                         (Y_train[:, i] - np.mean(Y_train[:, i]))**2)
@@ -197,7 +197,7 @@ def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
                 if use_test:
                     score_test[i] = 100. * (1. - np.linalg.norm(
                         Yhat_test[:, i] - Y_test[:, i]) / np.sqrt(nY_test2))
-            if isRMSE:
+            elif isRMSE:
                 if use_training:
                     score_train[i] = np.sqrt((np.sum((Yhat_train[:, i] -
                                                       Y_train[:, i]) ** 2))/Y_train.shape[0])
@@ -221,10 +221,11 @@ def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
             # print(text)
         msg += "\n-----\nAverage "
     else:
-        if use_training:
-            nY_train2 = np.sum((Y_train-np.mean(Y_train))**2)
-        if use_test:
-            nY_test2 = np.sum((Y_test - np.mean(Y_test))**2)
+        if isR2 or isBFR:
+            if use_training:
+                nY_train2 = np.sum((Y_train-np.mean(Y_train))**2)
+            if use_test:
+                nY_test2 = np.sum((Y_test - np.mean(Y_test))**2)
         if isR2:
             if use_training:
                 score_train = 100. * \

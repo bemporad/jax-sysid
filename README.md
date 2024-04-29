@@ -284,6 +284,20 @@ $$
 	\|y_k-\hat y_k\|_2^2
 $$
 
+**jax-sysid** also supports custom regularization terms $r_c(z)$, where $z=(\theta,x_0)$. You can specify such custom regularization function it in the definition of the overall loss. For example, say for some reason you want to impose $\|\theta\|_2^2\leq 1$ as a soft constraint, you can penalize
+
+$$\frac{1}{2} \rho_{\theta} \|\theta\|_2^2 + \rho_{x_0} \|x_0\|_2^2 + \rho_c\max\{\|\theta\|_2^2-1,0\}^2$$
+
+with $\rho_c\gg\rho_\theta$, $\rho_c\gg\rho_{x_0}$, for instance $\rho_c=1000$, $\rho_\theta=0.001$, $\rho_{x0}=0.01$. In Python:
+
+~~~python
+@jax.jit
+def custom_reg_fcn(th,x0):
+    return 1000.*jnp.maximum(jnp.sum(th**2)-1.,0.)**2
+model.loss(rho_x0=0.01, rho_th=0.001, custom_regularization= custom_reg_fcn)
+~~~
+
+
 
 <a name="static"></a>
 ### Static models and nonlinear regression

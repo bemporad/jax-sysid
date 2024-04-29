@@ -74,8 +74,6 @@ if not jax.config.jax_enable_x64:
     jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
 
 # state-update function
-
-
 class FX(nn.Module):
     @nn.compact
     def __call__(self, x):
@@ -87,8 +85,6 @@ class FX(nn.Module):
         return x
 
 # output function
-
-
 class FY(nn.Module):
     @nn.compact
     def __call__(self, x):

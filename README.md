@@ -351,6 +351,13 @@ model.optimization(lbfgs_epochs=500)
 model.fit(Ys, Us)
 ~~~
 
+To include lower and upper bounds on the parameters of the model, use the following additional arguments when specifying the optimization problem:
+
+~~~python
+model.optimization(lbfgs_epochs=500, params_min=lb, params_max=ub)
+~~~
+
+where `lb` and `ub` are lists of arrays with the same structure as `model.params`. See `example_static_convex.py` for examples on how to use nonnegative constraints to fit input-convex neural networks.
 
                 
 <a name="contributors"><a>

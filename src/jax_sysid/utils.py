@@ -106,7 +106,7 @@ def vec_reshape(y):
     return y
 
 
-def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
+def compute_scores(Y_train, Yhat_train, Y_test=None, Yhat_test=None, fit='R2'):
     """Compute R2-score, best fit rate, or accuracy score on (possibly multi-dimensional) 
        training and test output data
 
@@ -216,7 +216,9 @@ def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
             if not use_test:
                 score_test[i] = np.nan
 
-            text += f"{fit.capitalize()} score: training = {score_train[i]: 5.4f}{unit}, test = {score_test[i]: 5.4f}{unit}"
+            text += f"{fit.capitalize()} score: training = {score_train[i]: 5.4f}{unit}"
+            if use_test:
+                text += f", test = {score_test[i]: 5.4f}{unit}"
             msg += '\n' + text
             # print(text)
         msg += "\n-----\nAverage "
@@ -257,7 +259,9 @@ def compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='R2'):
         if not use_test:
             score_test = np.nan
 
-    msg += f"{fit.capitalize()} score:  training = {np.sum(score_train) / ny: 5.4f}{unit}, test = {np.sum(score_test) / ny: 5.4f}{unit}"
+    msg += f"{fit.capitalize()} score:  training = {np.sum(score_train) / ny: 5.4f}{unit}"
+    if use_test:
+        msg += f", test = {np.sum(score_test) / ny: 5.4f}{unit}"
     return score_train, score_test, msg
 
 

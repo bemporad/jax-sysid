@@ -138,16 +138,16 @@ model.loss(rho_x0=1.e-3, rho_th=1.e-2, tau_g=0.1)
 model.group_lasso_x()
 model.fit(Ys, Us)
 ~~~
-Groups in this case are entries in A,B,C,x0 related to the same state.
+Groups in this case are entries in $A,B,C,x_0$ related to the same state.
 
-Group-Lasso can be also used to try reducing the number of inputs that are relevant in the model. You can do this as follows:
+Group-Lasso can be also used to try to reduce the number of inputs that are relevant in the model. You can do this as follows:
 
 ~~~python
 model.loss(rho_x0=1.e-3, rho_th=1.e-2, tau_g=0.15) 
 model.group_lasso_u()
 model.fit(Ys, Us)
 ~~~
-Groups in this case are entries in B,D related to the same input.
+Groups in this case are entries in $B,D$ related to the same input.
 
 **jax-sysid** also supports multiple training experiments. In this case, the sequences of training inputs and outputs are passed as a list of arrays. For example, if three experiments are available for training, use the following command:
 
@@ -284,7 +284,7 @@ $$
 	\|y_k-\hat y_k\|_2^2
 $$
 
-**jax-sysid** also supports custom regularization terms $r_c(z)$, where $z=(\theta,x_0)$. You can specify such custom regularization function it in the definition of the overall loss. For example, say for some reason you want to impose $\|\theta\|_2^2\leq 1$ as a soft constraint, you can penalize
+**jax-sysid** also supports custom regularization terms $r_c(z)$, where $z=(\theta,x_0)$. You can specify such a custom regularization function when defining the overall loss. For example, say for some reason you want to impose $\|\theta\|_2^2\leq 1$ as a soft constraint, you can penalize
 
 $$\frac{1}{2} \rho_{\theta} \|\theta\|_2^2 + \rho_{x_0} \|x_0\|_2^2 + \rho_c\max\{\|\theta\|_2^2-1,0\}^2$$
 
@@ -297,7 +297,13 @@ def custom_reg_fcn(th,x0):
 model.loss(rho_x0=0.01, rho_th=0.001, custom_regularization= custom_reg_fcn)
 ~~~
 
+To include lower and upper bounds on the parameters of the model and/or the initial state, use the following additional arguments when specifying the optimization problem:
 
+~~~python
+model.optimization(params_min=lb, params_max=ub, x0_min=xmin, x0_max=xmax, ...)
+~~~
+
+where `lb` and `ub` are lists of arrays with the same structure as `model.params`, while `xmin` and `xmax` are arrays of the same dimension `model.nx` of the state vector. By default, each value is set equal to `None`, i.e., the corresponding constraint is not enforced. See `example_linear_positive.py` for examples of how to use nonnegative constraints to fit a positive linear system.
 
 <a name="static"></a>
 ### Static models and nonlinear regression
@@ -357,7 +363,7 @@ To include lower and upper bounds on the parameters of the model, use the follow
 model.optimization(lbfgs_epochs=500, params_min=lb, params_max=ub)
 ~~~
 
-where `lb` and `ub` are lists of arrays with the same structure as `model.params`. See `example_static_convex.py` for examples on how to use nonnegative constraints to fit input-convex neural networks.
+where `lb` and `ub` are lists of arrays with the same structure as `model.params`. See `example_static_convex.py` for examples of how to use nonnegative constraints to fit input-convex neural networks.
 
                 
 <a name="contributors"><a>

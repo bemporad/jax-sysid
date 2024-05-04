@@ -140,7 +140,7 @@ def adam_solver(JdJ, z, solver_iters, adam_eta, iprint, params_min=None, params_
     params_max : list, optional
         A list of numpy arrays representing the upper bounds of the optimization variables z.
         Upper bounds are enforced by clipping the variables during the iterations.
-    
+
     Returns
     -------
     tuple
@@ -164,8 +164,8 @@ def adam_solver(JdJ, z, solver_iters, adam_eta, iprint, params_min=None, params_
     beta2t = beta2
     epsil = 1e-8
 
-    ismin =(params_min is not None)
-    ismax =(params_max is not None)
+    ismin = (params_min is not None)
+    ismax = (params_max is not None)
     isbounded = ismin or ismax
     if isbounded:
         # Clip the initial guess, when required
@@ -174,7 +174,7 @@ def adam_solver(JdJ, z, solver_iters, adam_eta, iprint, params_min=None, params_
                 z[j] = np.maximum(z[j], params_min[j])
             if ismax:
                 z[j] = np.minimum(z[j], params_max[j])
-        
+
     for k in range(solver_iters):
         f, df = JdJ(z)
         if fbest > f:
@@ -235,6 +235,55 @@ def xsat(x, sat):
     return jnp.minimum(jnp.maximum(x, -sat), sat)  # hard saturation
 
 
+def get_bounds(z, epsil_lasso, params_min, params_max):
+    """
+    Utility function to create bounds for L-BFGS-B when splitting positive and negative parts   
+
+    Parameters
+    ----------
+    z : list
+        List of parameters.
+    epsil_lasso : float
+        Small positive value used to constrain the positive and negative parts to be strictly positive.
+    params_min : list of arrays
+        List of the same structure as self.params of lower bounds for the parameters.
+    params_max : list of arrays
+        List of the same structure as self.params of upper bounds for the parameters.
+    """
+
+    isbounded = (params_min is not None) or (params_max is not None)
+    nz = len(z)
+
+    lb = list()
+    ub = list()
+    if not isbounded:
+        for h in range(2):
+            for i in range(nz):
+                lb.append(np.zeros_like(z[i])+epsil_lasso)
+                ub.append(np.inf*np.ones_like(z[i]))
+    else:
+        # We have bounds on the parameters:
+        #     lb <= x  <= ub with y,z>=epsil_lasso and x = y-z
+        #
+        # Then, we impose:
+        #       max(0,lb) +epsil_lasso <= y <= max(0,ub) +epsil_lasso
+        #       max(0,-ub)+epsil_lasso <= z <= max(0,-lb)+epsil_lasso
+        #
+        # Note: we could eliminate some variables when the lower and upper bounds
+        # are both equal to epsil_lasso
+        for i in range(nz):
+            # positive part y
+            zi = jnp.zeros_like(z[i])
+            lb.append(jnp.maximum(params_min[i], zi)+epsil_lasso)
+            ub.append(jnp.maximum(params_max[i], zi)+epsil_lasso)
+        for i in range(nz):
+            # negative part z
+            zi = jnp.zeros_like(z[i])
+            lb.append(jnp.maximum(-params_max[i], zi)+epsil_lasso)
+            ub.append(jnp.maximum(-params_min[i], zi)+epsil_lasso)
+    return (lb, ub)
+
+
 class Model(object):
     """
     Base class of dynamical models for system identification
@@ -275,9 +324,10 @@ class Model(object):
 
         if y_in_x:
             self.nx = max(nx, ny)  # force nx>=ny
-            def output_fcn(x, u, params): 
+
+            def output_fcn(x, u, params):
                 return x[0:ny]
-            self.output_fcn = output_fcn 
+            self.output_fcn = output_fcn
         self.isLinear = False  # By default, the model is nonlinear
         self.Ts = Ts  # sample time
 
@@ -305,6 +355,12 @@ class Model(object):
         self.sparsity = None
         self.group_lasso_fcn = None
         self.custom_regularization = None
+        
+        self.params_min = None
+        self.params_max = None
+        self.x0_min = None
+        self.x0_max = None
+        self.isbounded = None
 
     def predict(self, x0, U, qx=0., qy=0.):
         """
@@ -333,9 +389,9 @@ class Model(object):
         nx = self.nx
         N = U.shape[0]
         ny = self.ny
-        
+
         use_scan = (qx is None or qx == 0.) and (qy is None or qy == 0.)
-             
+
         if not use_scan:
             # simulate with noise in a for-loop
             Y = np.empty((N, ny))
@@ -345,16 +401,17 @@ class Model(object):
                 Y[k] = self.output_fcn(x, u, self.params) + \
                     qy * np.random.randn(ny)
                 X[k] = x
-                x = self.state_fcn(x, u, self.params) + qx * np.random.randn(nx)
+                x = self.state_fcn(x, u, self.params) + \
+                    qx * np.random.randn(nx)
         else:
             @jax.jit
             def model_step(x, u):
-                y = jnp.hstack((self.output_fcn(x, u, self.params),x))
+                y = jnp.hstack((self.output_fcn(x, u, self.params), x))
                 x = self.state_fcn(x, u, self.params).reshape(-1)
                 return x, y
             _, YX = jax.lax.scan(model_step, x, U)
-            Y = YX[:,0:ny]
-            X = YX[:,ny:]
+            Y = YX[:, 0:ny]
+            X = YX[:, ny:]
 
         return Y, X
 
@@ -401,7 +458,8 @@ class Model(object):
         return
 
     def optimization(self, adam_eta=None, adam_epochs=None, lbfgs_epochs=None, iprint=None,
-                     memory=None, lbfgs_tol=None):
+                     memory=None, lbfgs_tol=None, params_min=None, params_max=None,
+                     x0_min=None, x0_max=None):
         """Define optimization parameters for the system identification problem.
 
         Parameters
@@ -418,6 +476,14 @@ class Model(object):
             L-BGFS memory (not used if method = 'Adam').
         lbfgs_tol : float
             Tolerance for L-BFGS-B iterations (not used if method = 'Adam').
+        params_min : list of arrays, optional
+            List of the same structure as self.params of lower bounds for the parameters.
+        params_max : list of arrays, optional
+            List of the same structure as self.params of upper bounds for the parameters.            
+        x0_min : array, optional
+            Lower bounds for the initial state vector.
+        x0_max : array, optional    
+            Upper bounds for the initial state vector.
         """
         self = optimization_base(self)
         if adam_eta is not None:
@@ -432,6 +498,10 @@ class Model(object):
             self.memory = memory
         if lbfgs_tol is not None:
             self.lbfgs_tol = lbfgs_tol
+        self.params_min = params_min
+        self.params_max = params_max
+        self.x0_min = x0_min
+        self.x0_max = x0_max
         return
 
     def init(self, params=None, x0=None, sigma=0.5, seed=0):
@@ -560,6 +630,32 @@ class Model(object):
         if not isL1reg and isGroupLasso:
             tau_th = default_small_tau_th  # add some small L1-regularization, see Lemma 2
 
+        self.isbounded = (self.params_min is not None) or (self.params_max is not None) or (
+            self.train_x0 and ((self.x0_min is not None) or (self.x0_max is not None)))
+        if self.isbounded or isL1reg or isGroupLasso:
+            # define default bounds, in case they are not provided
+            if self.params_min is None:
+                self.params_min = list()
+                for i in range(len(z)):
+                    self.params_min.append(-jnp.ones_like(z[i])*np.inf)
+            if self.params_max is None:
+                self.params_max = list()
+                for i in range(len(z)):
+                    self.params_max.append(jnp.ones_like(z[i])*np.inf)
+            if self.train_x0:
+                if self.x0_min is None:
+                    self.x0_min = [-jnp.ones_like(self.x0)*np.inf]*Nexp
+                if not isinstance(self.x0_min, list):
+                    self.x0_min = [self.x0_min]*Nexp # repeat the same initial-state bound on all experiments
+                if len(self.x0_min) is not Nexp:
+                    self.x0_min = [self.x0_min[0]]*Nexp # number of experiments has changed, repeat the same initial-state bound on all experiments
+                if self.x0_max is None:
+                    self.x0_max = [jnp.ones_like(self.x0)*np.inf]*Nexp
+                if not isinstance(self.x0_max, list):
+                    self.x0_max = [self.x0_max]*Nexp
+                if len(self.x0_max) is not Nexp:
+                    self.x0_max = [self.x0_max[0]]*Nexp
+ 
         x0 = self.x0
         if x0 is None:
             x0 = [jnp.zeros(nx)]*Nexp
@@ -597,8 +693,10 @@ class Model(object):
                 z.extend(z)
                 for i in range(nth):
                     zi = z[i].copy()
-                    z[i] = jnp.maximum(zi, 0)+epsil_lasso
-                    z[nth+i] = -jnp.minimum(zi, 0)+epsil_lasso
+                    # we could also consider bounds here, if present
+                    z[i] = jnp.maximum(zi, 0.)+epsil_lasso
+                    z[nth+i] = -jnp.minimum(zi, 0.)+epsil_lasso
+
             nzmx0 = len(z)
             if self.train_x0:
                 for i in range(Nexp):
@@ -667,8 +765,17 @@ class Model(object):
                 def JdJ(z):
                     return jax.value_and_grad(J)(z)
 
+                lb = None
+                ub = None
+                if self.isbounded:
+                    lb = self.params_min
+                    ub = self.params_max
+                    if self.train_x0:
+                        lb.append(self.x0_min)
+                        ub.append(self.x0_max)
+                        
                 z, Jopt = adam_solver(
-                    JdJ, z, solver_iters, self.adam_eta, self.iprint)
+                    JdJ, z, solver_iters, self.adam_eta, self.iprint, lb, ub)
 
             elif solver == "LBFGS":
                 # L-BFGS-B params (no L1 regularization)
@@ -678,6 +785,13 @@ class Model(object):
                 if self.iprint > -1:
                     print(
                         "Solving NLP with L-BFGS (%d optimization variables) ..." % nvars)
+
+                if isGroupLasso or isL1reg:
+                    bounds = get_bounds(
+                        z[0:nth], epsil_lasso, self.params_min, self.params_max)
+                    if self.train_x0:
+                        bounds[0].append(self.x0_min)
+                        bounds[1].append(self.x0_max)
 
                 if not isGroupLasso:
                     if not isL1reg:
@@ -699,10 +813,19 @@ class Model(object):
                                 if isCustomReg:
                                     cost += self.custom_regularization(z, x0)
                                 return cost
-
-                        solver = jaxopt.ScipyMinimize(
-                            fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
-                        z, state = solver.run(z)
+                        if not self.isbounded:
+                            solver = jaxopt.ScipyMinimize(
+                                fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
+                            z, state = solver.run(z)
+                        else:
+                            lb = self.params_min
+                            ub = self.params_max
+                            if self.train_x0:
+                                lb.append(self.x0_min)
+                                ub.append(self.x0_max)
+                            solver = jaxopt.ScipyBoundedMinimize(
+                                fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
+                            z, state = solver.run(z, bounds=(lb, ub))
                         iter_num = state.iter_num
                         Jopt = state.fun_val
                     else:
@@ -731,13 +854,7 @@ class Model(object):
 
                         solver = jaxopt.ScipyBoundedMinimize(
                             fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
-                        lb = list()
-                        for i in range(2 * nth):
-                            lb.append(0. * z[i]+epsil_lasso)
-                        if self.train_x0:
-                            for i in range(Nexp):
-                                lb.append(-np.inf * np.ones(nx))
-                        z, state = solver.run(z, bounds=(lb, np.inf))
+                        z, state = solver.run(z, bounds=bounds)
                         z[0:nth] = [
                             z1 - z2 for (z1, z2) in zip(z[0:nth], z[nth:2 * nth])]
                         iter_num = state.iter_num
@@ -776,13 +893,7 @@ class Model(object):
 
                     solver = jaxopt.ScipyBoundedMinimize(
                         fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
-                    lb = list()
-                    for i in range(2 * nth):
-                        lb.append(0. * z[i]+epsil_lasso)
-                    if self.train_x0:
-                        for i in range(Nexp):
-                            lb.append(-np.inf * np.ones(nx))
-                    z, state = solver.run(z, bounds=(lb, np.inf))
+                    z, state = solver.run(z, bounds=bounds)
                     z[0:nth] = [
                         z1 - z2 for (z1, z2) in zip(z[0:nth], z[nth:2 * nth])]
                     iter_num = state.iter_num
@@ -805,6 +916,13 @@ class Model(object):
 
         x0 = [np.array(x0i) for x0i in x0]
 
+        if not self.isbounded:
+            # reset original bounds, possibly altered in case of L1-regularization or group-Lasso and L-BFGS is used
+            self.params_min = None
+            self.params_max = None
+            self.x0_min = None
+            self.x0_max = None
+            
         if self.isLinear:
             # Change state-space realization by re-ordering the states as a function of the norm of the rows of A
             A = np.array(z[0])
@@ -907,7 +1025,7 @@ class Model(object):
         verbosity : bool
             If false, removes printout of operations
         LBFGS_refinement : bool
-            if True, refine solution via L-BFGS optimization
+            If True, refine solution via L-BFGS optimization. Also used in the case bounds on x0 have been specified and the value of x0 estimated by RTS is not feasible.
         LBFGS_rho_x0 : float
             L2-regularization used by L-BFGS, by default 1.e-8
         lbfgs_epochs : int
@@ -1014,6 +1132,17 @@ class Model(object):
                 print(
                     f"\nRTS smoothing, epoch: {epoch+1: 3d}/{RTS_epochs: 3d}, MSE loss = {mse_loss/N: 8.6f}")
 
+        isstatebounded = self.x0_min is not None or self.x0_max is not None
+        if isstatebounded:
+            lb = self.x0_min
+            if lb is None:
+                lb = -np.inf*np.ones(nx)
+            ub = self.x0_max
+            if ub is None:
+                ub = np.inf*np.ones(nx)
+            if np.any(x < lb) or np.any(x > ub):
+                LBFGS_refinement = True
+
         if LBFGS_refinement:
             # Refine via L-BFGS with very small penalty on x0
             options = lbfgs_options(
@@ -1029,9 +1158,15 @@ class Model(object):
             def J(x0):
                 _, Yhat = jax.lax.scan(SS_step, x0, U)
                 return jnp.sum((Yhat - Y) ** 2) / U.shape[0]+.5*LBFGS_rho_x0*jnp.sum(x0**2)
-            solver = jaxopt.ScipyMinimize(
+            if not isstatebounded:
+                solver = jaxopt.ScipyMinimize(
+                    fun=J, tol=options["ftol"], method="L-BFGS-B", maxiter=options["maxfun"], options=options)
+                x, state = solver.run(x)
+            else:
+                solver = jaxopt.ScipyBoundedMinimize(
                 fun=J, tol=options["ftol"], method="L-BFGS-B", maxiter=options["maxfun"], options=options)
-            x, state = solver.run(x)
+                x, state = solver.run(x, bounds=(lb, ub))
+                
             if verbosity:
                 mse_loss = state.fun_val-.5*LBFGS_rho_x0*np.sum(x**2)
                 print(
@@ -1357,7 +1492,7 @@ class StaticModel(object):
         self.sparsity = None
         self.group_lasso_fcn = None
         self.custom_regularization = None
-        
+
     def predict(self, U):
         """
         Evaluate the static model as a function of the input.
@@ -1404,12 +1539,12 @@ class StaticModel(object):
         self.tau_th = tau_th
         self.tau_g = tau_g
         self.zero_coeff = zero_coeff
-        self.group_lasso_fcn = group_lasso_fcn        
-        self.custom_regularization=custom_regularization
+        self.group_lasso_fcn = group_lasso_fcn
+        self.custom_regularization = custom_regularization
         return
 
     def optimization(self, adam_eta=None, adam_epochs=None, lbfgs_epochs=None, iprint=None, memory=None, lbfgs_tol=None, params_min=None, params_max=None):
-        """Define optimization parameters for the system identification problem.
+        """Define optimization parameters for the training problem.
 
         Parameters
         ----------
@@ -1493,16 +1628,16 @@ class StaticModel(object):
                 "\033[1mPlease use the init method to initialize the parameters of the model\033[0m"))
 
         z = self.params
-        
+
         if self.params_min is not None and self.params_max is None:
-            self.params_max=list()
+            self.params_max = list()
             for i in range(len(z)):
                 self.params_max.append(jnp.ones_like(z[i])*np.inf)
         if self.params_max is not None and self.params_min is None:
-            self.params_min=list()
+            self.params_min = list()
             for i in range(len(z)):
                 self.params_min.append(-jnp.ones_like(z[i])*np.inf)
-            
+
         tau_th = self.tau_th
         tau_g = self.tau_g
 
@@ -1563,7 +1698,7 @@ class StaticModel(object):
                 float
                     The loss value.
                 """
-                Yhat = self.output_fcn(U, th).reshape(-1,1)
+                Yhat = self.output_fcn(U, th).reshape(-1, 1)
                 cost = self.output_loss(Yhat, Y)
                 return cost
 
@@ -1596,39 +1731,6 @@ class StaticModel(object):
                     print(
                         "Solving NLP with L-BFGS (%d optimization variables) ..." % nvars)
 
-                def get_bounds(z,epsil_lasso,params_min,params_max):
-                    # utility function to create bounds for L-BFGS-B when splitting positive and negative parts
-
-                    isbounded = (params_min is not None) or (params_max is not None)
-
-                    lb = list()
-                    if not isbounded:
-                        for i in range(2 * nth):
-                            lb.append(jnp.zeros_like(z[i])+epsil_lasso)
-                        ub=np.inf
-                    else:
-                        # We have bounds on the parameters:
-                        #     lb <= x  <= ub with y,z>=epsil_lasso and x = y-z
-                        #
-                        # Then, we impose:
-                        #       max(0,lb) +epsil_lasso <= y <= max(0,ub) +epsil_lasso
-                        #       max(0,-ub)+epsil_lasso <= z <= max(0,-lb)+epsil_lasso
-                        #
-                        # Note: we could eliminate some variables when the lower and upper bounds
-                        # are both equal to epsil_lasso
-                        ub=list() 
-                        for i in range(nth):
-                            # positive part y
-                            zi=jnp.zeros_like(z[i])
-                            lb.append(jnp.maximum(params_min[i],zi)+epsil_lasso)
-                            ub.append(jnp.maximum(params_max[i],zi)+epsil_lasso)
-                        for i in range(nth):
-                            # negative part z
-                            zi=jnp.zeros_like(z[i])
-                            lb.append(jnp.maximum(-params_max[i],zi)+epsil_lasso)
-                            ub.append(jnp.maximum(-params_min[i],zi)+epsil_lasso)
-                    return (lb,ub)
-
                 if not isGroupLasso:
                     if not isL1reg:
                         def J(z):
@@ -1644,8 +1746,9 @@ class StaticModel(object):
                         else:
                             solver = jaxopt.ScipyBoundedMinimize(
                                 fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
-                            z, state = solver.run(z, bounds = (self.params_min, self.params_max))
-                            
+                            z, state = solver.run(z, bounds=(
+                                self.params_min, self.params_max))
+
                         iter_num = state.iter_num
                         Jopt = state.fun_val
                     else:
@@ -1663,7 +1766,8 @@ class StaticModel(object):
                         solver = jaxopt.ScipyBoundedMinimize(
                             fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
 
-                        bounds = get_bounds(z,epsil_lasso,self.params_min,self.params_max)
+                        bounds = get_bounds(
+                            z[0:nth], epsil_lasso, self.params_min, self.params_max)
                         z, state = solver.run(z, bounds=bounds)
                         z[0:nth] = [
                             z1 - z2 for (z1, z2) in zip(z[0:nth], z[nth:2 * nth])]
@@ -1687,7 +1791,8 @@ class StaticModel(object):
 
                     solver = jaxopt.ScipyBoundedMinimize(
                         fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
-                    bounds = get_bounds(z,epsil_lasso,self.params_min,self.params_max)
+                    bounds = get_bounds(
+                        z, epsil_lasso, self.params_min, self.params_max)
                     z, state = solver.run(z, bounds=bounds)
                     z[0:nth] = [
                         z1 - z2 for (z1, z2) in zip(z[0:nth], z[nth:2 * nth])]

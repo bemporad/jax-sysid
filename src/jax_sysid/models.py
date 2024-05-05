@@ -1792,7 +1792,7 @@ class StaticModel(object):
                     solver = jaxopt.ScipyBoundedMinimize(
                         fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
                     bounds = get_bounds(
-                        z, epsil_lasso, self.params_min, self.params_max)
+                        z[0:nth], epsil_lasso, self.params_min, self.params_max)
                     z, state = solver.run(z, bounds=bounds)
                     z[0:nth] = [
                         z1 - z2 for (z1, z2) in zip(z[0:nth], z[nth:2 * nth])]

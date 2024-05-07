@@ -1,6 +1,6 @@
 <img src="http://cse.lab.imtlucca.it/~bemporad/jax-sysid/images/jax-sysid-logo.png" alt="jax-sysid" width=40%/>
 
-A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for linear and nonlinear system identification of state-space models, recurrent neural network (RNN) training, and nonlinear regression.
+A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for linear and nonlinear system identification of state-space models, recurrent neural network (RNN) training, and nonlinear regression/classification.
  
 # Contents
 
@@ -11,7 +11,7 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
 * [Basic usage](#basic-usage)
     * [Linear state-space models](#linear)
     * [Nonlinear system identification and RNNs](#nonlinear)
-    * [Static models and nonlinear regression] (#static)
+    * [Static models and nonlinear regression/classification] (#static)
 
 * [Contributors](#contributors)
 
@@ -23,7 +23,7 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
 <a name="description"></a>
 ## Package description 
 
-**jax-sysid** is a Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for linear and nonlinear system identification of state-space models, recurrent neural network (RNN) training, and nonlinear regression. The algorithm can handle L1-regularization and group-Lasso regularization and relies on L-BFGS optimization for accurate modeling, fast convergence, and good sparsification of model coefficients.
+**jax-sysid** is a Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for linear and nonlinear system identification of state-space models, recurrent neural network (RNN) training, and nonlinear regression/classification. The algorithm can handle L1-regularization and group-Lasso regularization and relies on L-BFGS optimization for accurate modeling, fast convergence, and good sparsification of model coefficients.
 
 The package implements the approach described in the following paper:
 
@@ -306,7 +306,7 @@ model.optimization(params_min=lb, params_max=ub, x0_min=xmin, x0_max=xmax, ...)
 where `lb` and `ub` are lists of arrays with the same structure as `model.params`, while `xmin` and `xmax` are arrays of the same dimension `model.nx` of the state vector. By default, each value is set equal to `None`, i.e., the corresponding constraint is not enforced. See `example_linear_positive.py` for examples of how to use nonnegative constraints to fit a positive linear system.
 
 <a name="static"></a>
-### Static models and nonlinear regression
+### Static models and nonlinear regression / classification
 The same optimization algorithms used to train dynamical models can be used to train static models, i.e., to solve the nonlinear regression problem:
 
 $$  \min_{z}r(z)+\frac{1}{N}\sum_{k=0}^{N-1} \|y_{k}-f(u_k,\theta)\|_2^2$$
@@ -365,6 +365,15 @@ model.optimization(lbfgs_epochs=500, params_min=lb, params_max=ub)
 
 where `lb` and `ub` are lists of arrays with the same structure as `model.params`. See `example_static_convex.py` for examples of how to use nonnegative constraints to fit input-convex neural networks.
 
+To solve classification problems, you need to define a custom loss function to change the default Mean-Squared-Error loss. For example, to train a classifier for a multi-category classification problem with $K$ classes, you can specify a neural network with a linear output layer generating output predictions $\hat y\in R^K$ and define the associated cross-entropy $\ell(\hat y,y) = -\sum_{k=1}^Ky_k\log\left(\frac{e^{\hat y_k}}{\sum_{j=1}^Ke^{\hat y_j}}\right)$ function as follows: 
+
+~~~python
+def cross_entropy(Yhat,Y):
+    return -jax.numpy.sum(jax.nn.log_softmax(Yhat, axis=1)*Y)/Y.shape[0] 
+model.loss(rho_th=1.e-4, output_loss=cross_entropy)
+~~~
+
+See `example_static_fashion_mist.py` for an example using **Keras** with JAX backend to define the neural network model.
                 
 <a name="contributors"><a>
 ## Contributors

@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-jax-sysid: A Python package for linear and nonlinear system identification and nonlinear regression using Jax.
+jax-sysid: A Python package for linear and nonlinear system identification and nonlinear regression/classification using JAX.
 
 (C) 2024 A. Bemporad, March 6, 2024
 """
@@ -1698,7 +1698,7 @@ class StaticModel(object):
                 float
                     The loss value.
                 """
-                Yhat = self.output_fcn(U, th).reshape(-1, 1)
+                Yhat = self.output_fcn(U, th).reshape(-1, self.ny)
                 cost = self.output_loss(Yhat, Y)
                 return cost
 

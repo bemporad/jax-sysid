@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-jax-sysid: A Python package for linear and nonlinear system identification and nonlinear regression using Jax.
+jax-sysid: A Python package for linear and nonlinear system identification and nonlinear regression/classification using JAX.
 
 Utility functions.
 

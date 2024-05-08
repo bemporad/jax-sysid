@@ -11,7 +11,7 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
 * [Basic usage](#basic-usage)
     * [Linear state-space models](#linear)
     * [Nonlinear system identification and RNNs](#nonlinear)
-    * [Static models and nonlinear regression/classification] (#static)
+    * [Static models and nonlinear regression/classification](#static)
 
 * [Contributors](#contributors)
 
@@ -306,7 +306,7 @@ model.optimization(params_min=lb, params_max=ub, x0_min=xmin, x0_max=xmax, ...)
 where `lb` and `ub` are lists of arrays with the same structure as `model.params`, while `xmin` and `xmax` are arrays of the same dimension `model.nx` of the state vector. By default, each value is set equal to `None`, i.e., the corresponding constraint is not enforced. See `example_linear_positive.py` for examples of how to use nonnegative constraints to fit a positive linear system.
 
 <a name="static"></a>
-### Static models and nonlinear regression / classification
+### Static models and nonlinear regression/classification
 The same optimization algorithms used to train dynamical models can be used to train static models, i.e., to solve the nonlinear regression problem:
 
 $$  \min_{z}r(z)+\frac{1}{N}\sum_{k=0}^{N-1} \|y_{k}-f(u_k,\theta)\|_2^2$$

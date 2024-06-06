@@ -15,6 +15,8 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
 
 * [Contributors](#contributors)
 
+* [Acknowledgments](#acknowledgments)
+
 * [Citing jax-sysid](#bibliography)
 
 * [License](#license)
@@ -27,7 +29,7 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
 
 The package implements the approach described in the following paper:
 
-<a name="cite-Bem24"><a>
+<a name="cite-Bem24"></a>
 > [1] A. Bemporad, "[Linear and nonlinear system identification under $\ell_1$- and group-Lasso regularization via L-BFGS-B](
 http://arxiv.org/abs/2403.03827)," submitted for publication. Available on arXiv at <a href="http://arxiv.org/abs/2403.03827">
 http://arxiv.org/abs/2403.03827</a>, 2024. [[bib entry](#ref1)]
@@ -65,7 +67,7 @@ where $z=(\theta,x_0)$ and $\theta$ collecting the entries of $A,B,C,D$.
 
 The regularization term $r(z)$ includes the following components:
 
-$$\frac{1}{2} \rho_{\theta} \|\theta\|_2^2 $$
+$$\rho_{\theta} \|\theta\|_2^2 $$
 
 $$\rho_{x_0} \|x_0\|_2^2$$
 
@@ -157,6 +159,8 @@ model.fit([Ys1, Ys2, Ys3], [Us1, Us2, Us3])
 
 In case the initial state $x_0$ is trainable, one initial state per experiment is optimized. To avoid training the initial state, add `train_x0=False` when calling `model.loss`.
 
+By default **jax-sysid** initializes $A=\sigma I$, matrices $B$, $C$ randomly, and $D=0$. Function `IO2ss` in the `utils` module provides an alternative initialization method (Kung, 1978) based on fitting a finite impulse response on input/output data and then retrieving $A,B,C,D$ from the resulting Hankel matrix via SVD.
+
 <a name="nonlinear"></a>
 ### Nonlinear system identification and RNNs
 Given input/output training data $(u_0,y_0)$, $\ldots$, $(u_{N-1},y_{N-1})$, $u_k\in R^{n_u}$, $y_k\in R^{n_y}$, we want to identify a nonlinear parametric state-space model in the following form
@@ -226,7 +230,7 @@ Yshat, Xshat = model.predict(model.x0, Us)
 Yhat = unscale(Yshat, ymean, ygain)
 ~~~
 
-**jax-sysid** also supports recurrent neural networks defined via the **flax.linen** library:
+**jax-sysid** also supports recurrent neural networks defined via the **flax.linen** library (the `flax` package can be installed via `pip install flax`):
 
 
 ~~~python
@@ -375,7 +379,7 @@ model.loss(rho_th=1.e-4, output_loss=cross_entropy)
 
 See `example_static_fashion_mist.py` for an example using **Keras** with JAX backend to define the neural network model.
                 
-<a name="contributors"><a>
+<a name="contributors"></a>
 ## Contributors
 
 This package was coded by Alberto Bemporad.
@@ -383,7 +387,11 @@ This package was coded by Alberto Bemporad.
 
 This software is distributed without any warranty. Please cite the paper below if you use this software.
 
-<a name="bibliography"><a>
+<a name="acknowledgments"></a>
+## Acknowledgments
+We thank Roland Toth for suggesting the use of Kung's method for initializing linear state-space models.
+
+<a name="bibliography"></a>
 ## Citing jax-sysid
 
 <a name="ref1"></a>
@@ -398,7 +406,7 @@ This software is distributed without any warranty. Please cite the paper below i
 }
 ```
 
-<a name="license"><a>
+<a name="license"></a>
 ## License
 
 Apache 2.0

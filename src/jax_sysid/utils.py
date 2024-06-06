@@ -8,6 +8,7 @@ Utility functions.
 """
 
 import numpy as np
+from scipy.linalg import svd, lstsq
 
 
 def lbfgs_options(iprint, iters, lbfgs_tol, memory):
@@ -275,7 +276,7 @@ def print_eigs(A):
     A : array
         Input matrix
     """
-    print("Eigenvalues of A:")
+    print("Eigenvalues:")
     eigs = np.linalg.eig(A)[0]
     for i in range(A.shape[0]):
         print("%5.4f" % np.real(eigs[i]), end="")
@@ -339,3 +340,76 @@ def unscale_model(A, B, C, D, ymean, ygain, umean, ugain):
     D = D*ugain
     D = (D.T/ygain).T
     return A, B, C, D, ymean, umean
+
+
+def IO2ss(Y, U, nx, M):
+    """Compute a linear state-space realization from input/output data using least squares and SVD.
+
+    Given and input/output dataset, compute the state-space matrices A, B, C, D of a state-space model of order nx by first obtaining a FIR model of order M, and then performing a singular value decomposition of the corresponding Hankel matrix.
+
+    (C) 2024 A. Bemporad, May 20, 2024
+    
+    References:
+
+    [1] S.Y. Kung, "A New Identification and Model Reduction Algorithm via Singular Value Decomposition," In 12th Asilomar Conference on Circuits, Systems and Computers, pages 705–714, 1978.
+
+    [2] D.N. Miller, R.A. de Callafon, "Subspace Identification From Classical Realization Methods,"
+    Proc. 15th IFAC Sympt. System Identification, St. Malo, France, 2009.
+
+    Parameters
+    ----------
+    Y : ndarray
+        Output data array of shape (n_samples, ny)
+    U : ndarray
+        Input data array of shape (n_samples, nu)
+    nx : int
+        Desired system order
+    M : int
+        Intermediate FIR model order
+
+    Returns
+    -------
+    A : ndarray
+        A matrix
+    B : ndarray
+        B matrix
+    C : ndarray
+        C matrix
+    D : ndarray
+        D matrix
+    S : ndarray
+        Singular values of SVD decomposition of Hankel matrix, useful to choose the model order nx
+        by looking at the first most significant singular values.
+    """
+
+    Y = vec_reshape(Y)
+    U = vec_reshape(U)
+    N, ny = Y.shape
+    nu = U.shape[1]
+
+    # solve least squares problem to retrieve FIR coefficients:
+    bb = Y[M:]
+    AA = np.hstack([U[M-k:N-k, :] for k in range(M)])
+    h = lstsq(AA, bb)[0].T
+
+    n1 = M//2
+    n2 = M-n1-1
+    # get Hankel matrix H = Gamma @ Omega
+    H = np.vstack([h[:, nu*i:nu*(i+n2)] for i in range(1, n1+1)])
+
+    # perform Singular Value Decomposition
+    U1, S, Vt = svd(H, full_matrices=False)
+    Ur = U1[:, :nx]
+    Vr = Vt[:nx, :]
+
+    Sr_sqrt = np.sqrt(S[:nx])
+    Gamma_d = (Ur/Sr_sqrt).T
+    Omega_d = Vr.T/Sr_sqrt
+
+    # shifted Hankel matrix H1=Gamma@A@Omega
+    H1 = np.vstack([h[:, nu*i:nu*(i+n2)] for i in range(2, n1+2)])
+    A = Gamma_d@H1@Omega_d
+    B = (Vr[:,:nu].T*Sr_sqrt).T
+    C = Ur[:ny,:]*Sr_sqrt
+    D = h[:ny, :nu]
+    return A, B, C, D, S

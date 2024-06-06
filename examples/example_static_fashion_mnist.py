@@ -10,6 +10,8 @@ Cf. https://www.tensorflow.org/tutorials/keras/classification
 
 import numpy as np
 import matplotlib.pyplot as plt
+import os
+os.environ["KERAS_BACKEND"] = "jax"
 import keras
 from jax_sysid.models import StaticModel
 from jax_sysid.utils import compute_scores

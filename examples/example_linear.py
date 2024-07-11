@@ -13,10 +13,6 @@ import numpy as np
 
 plotfigs = False  # set to True to plot figures
 
-if plotfigs:
-    plt.ion()
-    plt.close('all')
-
 # Data generation
 seed = 3  # for reproducibility of results
 np.random.seed(seed)

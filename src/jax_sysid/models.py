@@ -155,7 +155,7 @@ def adam_solver(JdJ, z, solver_iters, adam_eta, iprint, params_min=None, params_
         print("Solving NLP with Adam (%d optimization variables) ..." % nvars)
 
     nz = len(z)
-    fbest = np.Inf
+    fbest = np.inf
     v = [np.zeros(zi.shape) for zi in z]
     m = [np.zeros(zi.shape) for zi in z]
     beta1 = 0.9
@@ -453,8 +453,10 @@ class Model(object):
         self.zero_coeff = zero_coeff
         self.xsat = xsat
         self.train_x0 = train_x0
-        self.group_lasso_fcn = group_lasso_fcn
-        self.custom_regularization = custom_regularization
+        if group_lasso_fcn is not None:
+            self.group_lasso_fcn = group_lasso_fcn
+        if custom_regularization is not None:
+            self.custom_regularization = custom_regularization
         return
 
     def optimization(self, adam_eta=None, adam_epochs=None, lbfgs_epochs=None, iprint=None,
@@ -1123,7 +1125,10 @@ class Model(object):
                 if not isLinear:
                     A = AA[k]
                 # G=(PP1[k]@AA[k].T)/PP2[k]
-                G = solve(PP2[k], (PP1[k]@A.T).T, assume_a='pos').T
+                try:
+                    G = solve(PP2[k], (PP1[k]@A.T).T, assume_a='pos').T 
+                except:                    
+                    G = solve(PP2[k], (PP1[k]@A.T).T, assume_a='gen').T 
                 x = XX1[k]+G@(x-XX2[k])
                 P = PP1[k]+G@(P-PP2[k])@G.T
 
@@ -1361,6 +1366,28 @@ class LinearModel(Model):
             return cost
         self.group_lasso_fcn = groupLassoRegU
         return
+    
+    def force_stability(self, rho_A=1.e3, epsilon_A = 1.e-3):
+        """Force stability of the linear state-space model by imposing the soft constraint ||A||_2 <= 1. The constraint is mapped into the following custom regularization term in the optimization problem:
+        
+        rho_A * max{||A||_2^2 − 1 + epsilon_A, 0}^2
+        
+        where rho_A is a large penalty and epsilon_A is a small positive number used to tighten the constraint.
+        
+        Parameters
+        ----------
+        rho_A : float
+            Penalty coefficient
+        epsilon_A : float
+            Tolerance for the constraint ||A||_2 <= 1
+        """
+        @jax.jit
+        def force_stability(th,x0):
+            A=th[0]
+            return rho_A*jnp.maximum(jnp.linalg.norm(A,2)**2-1.+epsilon_A,0.)**2
+
+        self.custom_regularization = force_stability
+        return
 
 
 class RNN(Model):
@@ -1539,8 +1566,10 @@ class StaticModel(object):
         self.tau_th = tau_th
         self.tau_g = tau_g
         self.zero_coeff = zero_coeff
-        self.group_lasso_fcn = group_lasso_fcn
-        self.custom_regularization = custom_regularization
+        if group_lasso_fcn is not None:
+            self.group_lasso_fcn = group_lasso_fcn
+        if custom_regularization is not None:
+            self.custom_regularization = custom_regularization
         return
 
     def optimization(self, adam_eta=None, adam_epochs=None, lbfgs_epochs=None, iprint=None, memory=None, lbfgs_tol=None, params_min=None, params_max=None):

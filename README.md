@@ -159,7 +159,13 @@ model.fit([Ys1, Ys2, Ys3], [Us1, Us2, Us3])
 
 In case the initial state $x_0$ is trainable, one initial state per experiment is optimized. To avoid training the initial state, add `train_x0=False` when calling `model.loss`.
 
-By default **jax-sysid** initializes $A=\sigma I$, matrices $B$, $C$ randomly, and $D=0$. Function `IO2ss` in the `utils` module provides an alternative initialization method (Kung, 1978) based on fitting a finite impulse response on input/output data and then retrieving $A,B,C,D$ from the resulting Hankel matrix via SVD.
+To attempt forcing that the identified linear model is asymptotically stable, i.e., that matrix $A$ has all eigenvalues inside the unit disk, you can use the following command:
+
+~~~python
+model.force_stability()
+~~~
+
+before calling the `fit` function. This will introduce a custom regularization penalty that tries to enforce the constraint $\|A\|_2<1$.
 
 <a name="nonlinear"></a>
 ### Nonlinear system identification and RNNs

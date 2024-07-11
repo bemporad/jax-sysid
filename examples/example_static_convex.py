@@ -19,16 +19,12 @@ np.random.seed(seed)
 
 plotfigs = True  # set to True to plot figures
 
-if plotfigs:
-    plt.ion()
-    plt.close('all')
-
 jax.config.update('jax_platform_name', 'cpu')
 if not jax.config.jax_enable_x64:
     jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
 
 for example in ['1d','2d']:
-    print(f'Running example {example}')
+    print(f'Running {example}-example')
 
     # Data generation
     if example == '1d':

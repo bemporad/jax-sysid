@@ -19,7 +19,6 @@ from jax import nn
 import jax.numpy as jnp
 
 np.random.seed(1)
-plt.ion()
 
 (train_images, train_labels), (test_images, test_labels) = keras.datasets.fashion_mnist.load_data()
 

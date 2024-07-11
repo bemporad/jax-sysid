@@ -15,10 +15,6 @@ import numpy as np
 
 plotfigs = True  # set to True to plot figures
 
-if plotfigs:
-    plt.ion()
-    plt.close('all')
-
 U, Y = fetch_data("529_pollen", return_X_y=True, local_cache_dir='./datasets/')
 tau_th = 0.002
 zero_coeff = 1.e-4

@@ -266,7 +266,7 @@ def compute_scores(Y_train, Yhat_train, Y_test=None, Yhat_test=None, fit='R2'):
     return score_train, score_test, msg
 
 
-def print_eigs(A):
+def print_eigs(A, num_digits=4):
     """Print the eigenvalues of a given square matrix.
 
     (C) 2023 A. Bemporad
@@ -275,14 +275,16 @@ def print_eigs(A):
     ----------
     A : array
         Input matrix
+    num_digits : int
+        Number of decimal digits to print
     """
     print("Eigenvalues:")
     eigs = np.linalg.eig(A)[0]
     for i in range(A.shape[0]):
-        print("%5.4f" % np.real(eigs[i]), end="")
+        print(f"%5.{num_digits}f" % np.real(eigs[i]), end="")
         im = np.imag(eigs[i])
         if not im == 0.0:
-            print(" + j%5.4f" % im)
+            print(f" + j%5.{num_digits}f" % im)
         else:
             print("")
     return

@@ -1048,13 +1048,7 @@ class Model(object):
 
         isLinear = self.isLinear
         if isLinear:
-            if self.y_in_x:
-                A, _ = self.params
-            else:
-                if self.feedthrough:
-                    A, _, C, _ = self.params
-                else:
-                    A, _, C = self.params
+            A, _, C, _ = self.params2ABCD()
         else:
             @jax.jit
             def Ck(x, u):
@@ -1081,14 +1075,15 @@ class Model(object):
         P = np.eye(nx) / (rho_x0 * N)
         x = np.zeros(nx)
 
-        if verbosity:
-            therange = tqdm.trange(
-                N, ncols=30, bar_format='{percentage:3.0f}%|{bar}|', leave=True)
-        else:
-            therange = range(N)
-
         for epoch in range(RTS_epochs):
+            
+            if verbosity:
+                therange = tqdm.trange(
+                    N, ncols=30, bar_format='{percentage:3.0f}%|{bar}|', leave=True)
+            else:
+                therange = range(N)
             mse_loss = 0.0
+
             for k in therange:
                 u = U[k]
 
@@ -1317,7 +1312,7 @@ class LinearModel(Model):
     def params2ABCD(self):
         A, B = self.params[0:2]
         if self.y_in_x:
-            C = np.eye(self.ny)
+            C = np.hstack((np.eye(self.ny), np.zeros((self.ny, self.nx-self.ny))))
             D = np.zeros((self.ny, self.nu))
         else:
             C = self.params[2]

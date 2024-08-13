@@ -83,20 +83,6 @@ print(msg)
 A, B, C, D = model.ssdata()
 print_eigs(A, num_digits=8)
 
-
-# PyQt3D                5.15.6
-# PyQt5                 5.15.9
-# PyQt5-sip             12.12.1
-# PyQt6                 6.5.1
-# PyQt6-Qt6             6.5.1
-# PyQt6-sip             13.5.1
-# PyQtChart             5.15.6
-# PyQtDataVisualization 5.15.5
-# PyQtNetworkAuth       5.15.5
-# PyQtPurchasing        5.15.5
-# PyQtWebEngine         5.15.6
-
-
 if plotfigs:
     T_train = np.arange(N_train)*Ts
     T_test = np.arange(N_test)*Ts

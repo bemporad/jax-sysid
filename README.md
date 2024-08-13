@@ -236,6 +236,28 @@ Yshat, Xshat = model.predict(model.x0, Us)
 Yhat = unscale(Yshat, ymean, ygain)
 ~~~
 
+As the training problem, in general, is a nonconvex optimization problem, the obtained model may depend on the initial value of the parameters. **jax-sysid** supports training models in parallel (including static models) using the `joblib` library. In the example above, we can train 10 different models using 10 jobs in `joblib` as follows:
+
+~~~
+def init_fcn(seed):
+    np.random.seed(seed)
+    A  = 0.5*np.eye(nx)
+    B = 0.1*np.random.randn(nx,nu)
+    C = 0.1*np.random.randn(ny,nx)
+    W1 = 0.1*np.random.randn(nnx,nx)
+    W2 = 0.5*np.random.randn(nnx,nu)
+    W3 = 0.5*np.random.randn(nx,nnx)
+    b1 = np.zeros(nnx)
+    b2 = np.zeros(nx)
+    W4 = 0.5*np.random.randn(nny,nx)
+    W5 = 0.5*np.random.randn(ny,nny)
+    b3 = np.zeros(nny)
+    b4 = np.zeros(ny)
+    return [A,B,C,W1,W2,W3,b1,b2,W4,W5,b3,b4]
+
+models = model.parallel_fit(Ys, Us, init_fcn=init_fcn, seeds=range(10), n_jobs=10)
+~~~
+
 **jax-sysid** also supports recurrent neural networks defined via the **flax.linen** library (the `flax` package can be installed via `pip install flax`):
 
 

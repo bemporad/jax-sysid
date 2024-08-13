@@ -15,6 +15,7 @@ from scipy.linalg import solve
 import tqdm
 import sys
 from jax_sysid.utils import lbfgs_options, vec_reshape
+from joblib import Parallel, delayed
 
 epsil_lasso = 1.e-16  # tolerance used in groupLassoReg functions to prevent 0/0 = nan in the Jacobian vector when the argument is the zero vector
 default_small_tau_th = 1.e-8  # add some small L1-regularization.
@@ -666,7 +667,7 @@ class Model(object):
 
         def train_model(solver, solver_iters, z, x0, J0):
             """
-            Train a linear state-space model using the specified solver.
+            Train a state-space model using the specified solver.
 
             Parameters
             ----------
@@ -1007,6 +1008,31 @@ class Model(object):
         self.sparsity = sparsity
         return
 
+    def parallel_fit(self, Y, U, init_fcn, seeds, n_jobs):
+        """
+        Fits the model in parallel using multiple seeds.
+
+        Parameters:
+            Y : ndarray or list of ndarrays
+                Training dataset: output data. Y must be a N-by-ny numpy array
+                or a list of Ni-by-ny numpy arrays, where Ni is the length of the i-th experiment.
+            U : ndarray
+                Training dataset: input data. U must be a N-by-nu numpy array 
+                or a list of Ni-by-nu numpy arrays, where Ni is the length of the i-th experiment.            
+            init_fcn (callable): A function that initializes the model parameters given a seed.
+            seeds (array-like): The seeds used for initialization.
+            n_jobs (int): The number of parallel jobs to run.
+
+        Returns:
+            list: A list of fitted models.
+        """
+        def single_fit(seed):
+            self.init(params=init_fcn(seed))
+            self.fit(Y, U)
+            return self
+        return Parallel(n_jobs=n_jobs)(delayed(single_fit)(seed) for seed in seeds)
+        
+       
     def learn_x0(self, U, Y, rho_x0=None, RTS_epochs=1, verbosity=True, LBFGS_refinement=False,
                  LBFGS_rho_x0=1.e-8, lbfgs_epochs=1000, Q=None, R=None):
         """Estimate x0 by Rauch–Tung–Striebel smoothing (Sarkka and Svenson, 2023, p.268),
@@ -1098,8 +1124,16 @@ class Model(object):
                 e = Y[k]-y
                 mse_loss += np.sum(e**2)  # just for monitoring purposes
                 x += M@e  # x(k | k)
-                P -= M@PC.T  # P(k|k)
-                P = (P + P.T)/2.
+                
+                # Standard Kalman measurement update
+                #P -= M@PC.T  
+                #P = (P + P.T)/2. # P(k|k)
+                
+                # Joseph stabilized covariance update
+                IKH = -M@C 
+                IKH += jnp.eye(nx)
+                P = IKH@P@IKH.T+M@R@M.T # P(k|k)
+                
                 PP1[k] = P
                 XX1[k] = x
 
@@ -1852,6 +1886,28 @@ class StaticModel(object):
         self.sparsity = sparsity
         return
 
+    def parallel_fit(self, Y, U, init_fcn, seeds, n_jobs):
+        """
+        Fits the model in parallel using multiple seeds.
+
+        Parameters:
+            Y : ndarray
+                Training dataset: output data. Y must be a N-by-ny numpy array.
+            U : ndarray
+                Training dataset: input data. U must be a N-by-nu numpy array.         
+            init_fcn (callable): A function that initializes the model parameters given a seed.
+            seeds (array-like): The seeds used for initialization.
+            n_jobs (int): The number of parallel jobs to run.
+
+        Returns:
+            list: A list of fitted models.
+        """
+        def single_fit(seed):
+            self.init(params=init_fcn(seed))
+            self.fit(Y, U)
+            return self
+        return Parallel(n_jobs=n_jobs)(delayed(single_fit)(seed) for seed in seeds)
+        
     def sparsity_analysis(self):
         line = "-"*50 + "\n"
         txt = "Model sparsity:\n" + line

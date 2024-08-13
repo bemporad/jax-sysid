@@ -6,7 +6,7 @@ Nonlinear system identification example using custom residual recurrent neural n
             x(k+1) = A*x(k) + B*u(k) + fx(x(k),u(k))
               y(k) = C*x(k) + fy(x(k),u(k))
 
-(C) 2024 A. Bemporad, March 6, 2024
+(C) 2024 A. Bemporad, August 13, 2024
 """
 
 from jax_sysid.utils import standard_scale, unscale, compute_scores
@@ -95,6 +95,7 @@ model = Model(nx, ny, nu, state_fcn=state_fcn, output_fcn=output_fcn)
 nnx = 5  # number of hidden neurons in state-update function
 nny = 5  # number of hidden neurons in output function
 
+
 def init_fcn(seed):
     np.random.seed(seed)
     A = 0.5*np.eye(nx)
@@ -111,6 +112,7 @@ def init_fcn(seed):
     b4 = np.zeros(ny)
     return [A, B, C, W1, W2, W3, b1, b2, W4, W5, b3, b4]
 
+
 # initialize model coefficients
 model.init(params=init_fcn(seed=1))
 # L2-regularization on initial state and model coefficients
@@ -118,12 +120,13 @@ model.loss(rho_x0=1.e-4, rho_th=1.e-4)
 # number of epochs for Adam and L-BFGS-B optimization
 model.optimization(adam_epochs=0, lbfgs_epochs=2000)
 
-models = model.parallel_fit(Ys_train, Us_train, init_fcn=init_fcn, seeds=range(10), n_jobs=10)
+models = model.parallel_fit(
+    Ys_train, Us_train, init_fcn=init_fcn, seeds=range(10), n_jobs=10)
 
 # Find model that achieves best fit on test data (this operation could be parallelized too)
-best_R2=-np.inf
+best_R2 = -np.inf
 best_id = -1
-id=0
+id = 0
 for model in models:
     x0_test = model.learn_x0(Us_test, Ys_test)
     Yshat_train, _ = model.predict(model.x0, Us_train)
@@ -133,30 +136,34 @@ for model in models:
     R2, R2_test, msg = compute_scores(
         Y_train, Yhat_train, Y_test, Yhat_test, fit='R2')
     print(msg)
-    if float(R2_test)>best_R2:
+    if float(R2_test) > best_R2:
         best_R2 = float(R2_test)
         best_id = id
-    id+=1
+    id += 1
 best_model = models[best_id]
 print(f"\nBest R2-score achieved on test data = {best_R2}")
 
 if False:
-    # Parallel training of linear models. In this case, we get the same results even when the model is initilized from the same seed.
+    # Parallel training of linear models. In this case, we get the same results even when the model is initilized from the same seed, although different state-space realizations
     # -----------------------------------
     model = LinearModel(nx, ny, nu, feedthrough=False)
-    def init_fcn(seed):
-        np.random.seed(seed)
-        A = 0.5*np.eye(nx)
-        B = 0.1*np.random.randn(nx, nu)
-        C = 0.1*np.random.randn(ny, nx)
-        return [A, B, C] # no feedthrough, therefore only A,B,C are trainable (see model.params)
     model.loss(rho_x0=1.e-3, rho_th=1.e-2)
     # number of epochs for Adam and L-BFGS-B optimization
     model.optimization(adam_epochs=0, lbfgs_epochs=1000)
-    models=model.parallel_fit(Ys_train, Us_train, init_fcn, seeds=range(10), n_jobs=10)
+    models = model.parallel_fit(
+        Ys_train, Us_train, seeds=range(10), n_jobs=10)
+    for model in models:
+        x0_test = model.learn_x0(Us_test, Ys_test)
+        Yshat_train, _ = model.predict(model.x0, Us_train)
+        Yhat_train = unscale(Yshat_train, ymean, ygain)
+        Yshat_test, _ = model.predict(x0_test, Us_test)
+        Yhat_test = unscale(Yshat_test, ymean, ygain)
+        R2, R2_test, msg = compute_scores(
+            Y_train, Yhat_train, Y_test, Yhat_test, fit='R2')
+        print(msg)
 
 # Parallel training of static models:
-U, Y = fetch_data("529_pollen", return_X_y=True, local_cache_dir='./datasets/')
+U, Y = fetch_data("529_pollen", return_X_y=True)
 tau_th = 0.002
 zero_coeff = 1.e-4
 Y = np.atleast_2d(Y).T
@@ -182,6 +189,7 @@ Y_test = Y[N_train:]
 Ys_test = (Y_test-ymean)*ygain  # use same scaling as for training data
 Us_test = (U_test-umean)*ugain
 
+
 @jax.jit
 def output_fcn(u, params):
     W1, b1, W2, b2 = params
@@ -189,22 +197,30 @@ def output_fcn(u, params):
     y = W2@jnp.arctan(y)+b2
     return y.T
 
+
 model = StaticModel(ny, nu, output_fcn)
 nn = 10  # number of neurons
+
+
 def init_fcn(seed):
     np.random.seed(seed)
     W1 = np.random.randn(nn, nu)
-    b1 = np.random.randn(nn,1)
+    b1 = np.random.randn(nn, 1)
     W2 = np.random.randn(1, nn)
-    b2 = np.random.randn(1,1)
+    b2 = np.random.randn(1, 1)
     return [W1, b1, W2, b2]
-model.loss(rho_th=1.e-4, tau_th=tau_th) # L1+L2-regularization on initial state and model coefficients
-model.optimization(adam_epochs=0, lbfgs_epochs=500) # number of epochs for Adam and L-BFGS-B optimization
 
-seeds = range(10) 
-models=model.parallel_fit(Ys_train, Us_train, init_fcn=init_fcn, seeds=seeds, n_jobs=10)
 
-id=0
+# L1+L2-regularization on initial state and model coefficients
+model.loss(rho_th=1.e-4, tau_th=tau_th)
+# number of epochs for Adam and L-BFGS-B optimization
+model.optimization(adam_epochs=0, lbfgs_epochs=500)
+
+seeds = range(10)
+models = model.parallel_fit(
+    Ys_train, Us_train, init_fcn=init_fcn, seeds=seeds, n_jobs=10)
+
+id = 0
 for model in models:
     Yshat_train = model.predict(Us_train)
     Yhat_train = unscale(Yshat_train, ymean, ygain)
@@ -213,6 +229,4 @@ for model in models:
     R2, R2_test, msg = compute_scores(
         Y_train, Yhat_train, Y_test, Yhat_test, fit='R2')
     print(f"seed = {seeds[id]}: {msg}")
-    id+=1
-
-
+    id += 1

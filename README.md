@@ -11,6 +11,7 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
 * [Basic usage](#basic-usage)
     * [Linear state-space models](#linear)
     * [Nonlinear system identification and RNNs](#nonlinear)
+    * [Quasi-Linear Parameter-Varying models](#quasiLPV)
     * [Static models and nonlinear regression/classification](#static)
 
 * [Contributors](#contributors)
@@ -61,7 +62,7 @@ The training problem to solve is
 
 $$\min_{z}r(z)+\frac{1}{N}\sum_{k=0}^{N-1} \|y_{k}-Cx_k-Du_k\|_2^2$$
 
-$$\mbox{s.t.}\ x_{k+1}=Ax_k+Bu_k, \ k=0,\ldots,N-2$$
+$$\textrm{s.t.}\ x_{k+1}=Ax_k+Bu_k, \ k=0,\ldots,N-2$$
 
 where $z=(\theta,x_0)$ and $\theta$ collecting the entries of $A,B,C,D$.
 
@@ -181,7 +182,7 @@ As for the linear case, the training problem to solve is
 
 $$  \min_{z}r(z)+\frac{1}{N}\sum_{k=0}^{N-1} \|y_{k}-g(x_k,u_k,\theta)\|_2^2$$
 
-$$\mbox{s.t.}\ x_{k+1}=f(x_k,u_k,\theta),\ k=0,\ldots,N-2$$
+$$\textrm{s.t.}\ x_{k+1}=f(x_k,u_k,\theta),\ k=0,\ldots,N-2$$
 
 where $z=(\theta,x_0)$. The regularization term $r(z)$ is the same as in the linear case.
 
@@ -236,7 +237,7 @@ Yshat, Xshat = model.predict(model.x0, Us)
 Yhat = unscale(Yshat, ymean, ygain)
 ~~~
 
-As the training problem, in general, is a nonconvex optimization problem, the obtained model may depend on the initial value of the parameters. **jax-sysid** supports training models in parallel (including static models) using the `joblib` library. In the example above, we can train 10 different models using 10 jobs in `joblib` as follows:
+As the training problem, in general, is a nonconvex optimization problem, the obtained model often depends on the initial value of the parameters. The **jax-sysid** library supports training models in parallel (including static models) using the `joblib` library. In the example above, we can train 10 different models using 10 jobs in `joblib` as follows:
 
 ~~~
 def init_fcn(seed):
@@ -336,6 +337,69 @@ model.optimization(params_min=lb, params_max=ub, x0_min=xmin, x0_max=xmax, ...)
 ~~~
 
 where `lb` and `ub` are lists of arrays with the same structure as `model.params`, while `xmin` and `xmax` are arrays of the same dimension `model.nx` of the state vector. By default, each value is set equal to `None`, i.e., the corresponding constraint is not enforced. See `example_linear_positive.py` for examples of how to use nonnegative constraints to fit a positive linear system.
+
+<a name="quasiLPV"></a>
+### Quasi-Linear Parameter-Varying (qLPV) models
+As a special case of nonlinear dynamical models, **jax-sysid** supports the identification of quasi-LPV models of the form
+
+$$x_{k+1} = A(p_k)x_k + B(p_k)u_k$$
+
+$$y_k = C(p_k) x_k+D(p_k)u_k$$
+
+where the scheduling vector $p_k$ is an arbitrary parametric nonlinear function (to be trained) of $x_k$ and $u_k$ 
+with $n_p$ entries 
+
+$$p_k = f(x_k,u_k,\theta_p)$$
+
+and
+
+$$A(p_k) = A_{\rm lin}+\sum_{i=1}^{n_p} A_i p_{ki},~~B(p_k) = B_{\rm lin}+\sum_{i=1}^{n_p} B_i p_{ki}$$
+
+$$C(p_k) = C_{\rm lin}+\sum_{i=1}^{n_p} C_i p_{ki},~~D(p_k) = D_{\rm lin}+\sum_{i=1}^{n_p} D_i p_{ki}$$
+
+For both LTI and qLPV models, **jax-sysid** must enable the feedthrough term $D(p_k)=0$ by specifying the flag `feedthrough=True` when defining the model (by default, no feedthrough is in place). Moreover, for all linear, nonlinear, and qLPV models, one can force $y_k=[I\ 0]x_k$ by specifying `y_in_x=True` in the object constructor.
+
+Let's train a quasi-LPV model on a sequence of inputs $U=[u_0\ \ldots\ u_{N-1}]'$ and output $Y=[y_0\ \ldots\ y_{N-1}]'$, with scheduling parameter function $f(x,u,\theta_p)$ = `qlpv_fcn`, initial parameters $\theta_p$ = `qlpv_params_init`, regularization $\rho_\theta=10^{-2}$, $\rho_{x_0}=10^{-3}$, running the L-BFGS solver for at most 1000 function evaluations:
+
+~~~python
+from jax_sysid.models import qLPVModel
+
+model = qLPVModel(nx, ny, nu, npar, qlpv_fcn, qlpv_params_init)
+
+model.loss(rho_x0=1.e-3, rho_th=1.e-2) 
+model.optimization(lbfgs_epochs=1000) 
+model.fit(Ys, Us, LTI_training=True)
+Yhat, Xhat = model.predict(model.x0, U)
+~~~
+
+where `Us`, `Ys` are the scaled input and output signals. The flag `LTI_training=True` forces the training algorithm to initialize $A_{\rm lin},B_{\rm lin},C_{\rm lin},D_{\rm lin}$
+by first fitting an LTI model.
+
+After identifying the model, to retrieve the resulting matrices $A_{\rm lin}$, $B_{\rm lin}$, $C_{\rm lin}$, $D_{\rm lin}$, $\{A_i\}$, $\{B_i\}$, $\{C_i\}$, $\{D_i\}$, $i=1,\ldots,n_p$, you can use the following:
+
+~~~python
+A, B, C, D, Ap, Bp, Cp, Dp = model.ssdata()
+~~~
+
+where `Ap`, `Bp`, `Cp`, `Dp` are tensors (3D matrices) containing the corresponding linear matrices, i.e., `Ap[i,:,:]`=$A_i$,
+`Bp[i,:,:]`=$B_i$, `Cp[i,:,:]`=$C_i$, `Dp[i,:,:]`=$D_i$.
+
+To attempt to reduce the number of scheduling variables in the model, you can use group-Lasso regularization as follows:
+
+~~~python
+model.loss(rho_x0=1.e-3, rho_th=1.e-2, tau_g=0.1) 
+model.group_lasso_p()
+model.fit(Ys, Us)
+~~~
+Each group $i=1,\ldots,n_p$ collects the entries of $(A_i, B_i, C_i, D_i)$ and `tau_g` is the weight associated with the corresponding group-Lasso penalty.
+
+Parallel training from different initial guesses is also supported for qLPV models. To this end, you must define a function `qlpv_param_init_fcn(seed)` that initializes the parameter vector $\theta_p$ of the scheduling function for a given `seed`. For example,
+you can train the model for 10 different random seeds on 10 jobs by running:
+
+~~~python
+models = model.parallel_fit(Y, U, qlpv_param_init_fcn=qlpv_param_init_fcn, seeds=range(10), n_jobs=10)
+~~~
+
 
 <a name="static"></a>
 ### Static models and nonlinear regression/classification

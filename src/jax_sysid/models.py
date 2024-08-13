@@ -329,7 +329,8 @@ class Model(object):
             def output_fcn(x, u, params):
                 return x[0:ny]
             self.output_fcn = output_fcn
-        self.isLinear = False  # By default, the model is nonlinear
+        self.isLinear = False  # By default, the model is a general nonlinear model
+        self.isqLPV = False
         self.Ts = Ts  # sample time
 
         self.output_loss = None
@@ -356,7 +357,7 @@ class Model(object):
         self.sparsity = None
         self.group_lasso_fcn = None
         self.custom_regularization = None
-        
+
         self.params_min = None
         self.params_max = None
         self.x0_min = None
@@ -649,16 +650,18 @@ class Model(object):
                 if self.x0_min is None:
                     self.x0_min = [-jnp.ones_like(self.x0)*np.inf]*Nexp
                 if not isinstance(self.x0_min, list):
-                    self.x0_min = [self.x0_min]*Nexp # repeat the same initial-state bound on all experiments
+                    # repeat the same initial-state bound on all experiments
+                    self.x0_min = [self.x0_min]*Nexp
                 if len(self.x0_min) is not Nexp:
-                    self.x0_min = [self.x0_min[0]]*Nexp # number of experiments has changed, repeat the same initial-state bound on all experiments
+                    # number of experiments has changed, repeat the same initial-state bound on all experiments
+                    self.x0_min = [self.x0_min[0]]*Nexp
                 if self.x0_max is None:
                     self.x0_max = [jnp.ones_like(self.x0)*np.inf]*Nexp
                 if not isinstance(self.x0_max, list):
                     self.x0_max = [self.x0_max]*Nexp
                 if len(self.x0_max) is not Nexp:
                     self.x0_max = [self.x0_max[0]]*Nexp
- 
+
         x0 = self.x0
         if x0 is None:
             x0 = [jnp.zeros(nx)]*Nexp
@@ -776,7 +779,7 @@ class Model(object):
                     if self.train_x0:
                         lb.append(self.x0_min)
                         ub.append(self.x0_max)
-                        
+
                 z, Jopt = adam_solver(
                     JdJ, z, solver_iters, self.adam_eta, self.iprint, lb, ub)
 
@@ -925,7 +928,7 @@ class Model(object):
             self.params_max = None
             self.x0_min = None
             self.x0_max = None
-            
+
         if self.isLinear:
             # Change state-space realization by re-ordering the states as a function of the norm of the rows of A
             A = np.array(z[0])
@@ -995,6 +998,15 @@ class Model(object):
                     removable.append(i)
             sparsity["removable_inputs"] = removable
 
+        if self.isqLPV:
+            removable = list()
+            _, _, _, _, Ap, Bp, Cp, Dp = self.ssdata()
+            for i in range(self.nqLPVpar):
+                if np.max(np.abs(Ap[i])) <= self.zero_coeff and np.max(np.abs(Bp[i])) <= self.zero_coeff and np.max(np.abs(Cp[i])) <= self.zero_coeff and np.max(np.abs(Dp[i])) <= self.zero_coeff:
+                    # print("parameter #%2d can be eliminated" % (i+1))
+                    removable.append(i)
+            sparsity["removable_parameters"] = removable
+
         sparsity["nonzero_parameters"] = [np.sum([np.sum(np.abs(z[i]) > self.zero_coeff) for i in range(
             len(z))]), np.sum([z[i].size for i in range(len(z))])]
 
@@ -1031,8 +1043,7 @@ class Model(object):
             self.fit(Y, U)
             return self
         return Parallel(n_jobs=n_jobs)(delayed(single_fit)(seed) for seed in seeds)
-        
-       
+
     def learn_x0(self, U, Y, rho_x0=None, RTS_epochs=1, verbosity=True, LBFGS_refinement=False,
                  LBFGS_rho_x0=1.e-8, lbfgs_epochs=1000, Q=None, R=None):
         """Estimate x0 by Rauch–Tung–Striebel smoothing (Sarkka and Svenson, 2023, p.268),
@@ -1102,7 +1113,7 @@ class Model(object):
         x = np.zeros(nx)
 
         for epoch in range(RTS_epochs):
-            
+
             if verbosity:
                 therange = tqdm.trange(
                     N, ncols=30, bar_format='{percentage:3.0f}%|{bar}|', leave=True)
@@ -1124,16 +1135,16 @@ class Model(object):
                 e = Y[k]-y
                 mse_loss += np.sum(e**2)  # just for monitoring purposes
                 x += M@e  # x(k | k)
-                
+
                 # Standard Kalman measurement update
-                #P -= M@PC.T  
-                #P = (P + P.T)/2. # P(k|k)
-                
+                # P -= M@PC.T
+                # P = (P + P.T)/2. # P(k|k)
+
                 # Joseph stabilized covariance update
-                IKH = -M@C 
+                IKH = -M@C
                 IKH += jnp.eye(nx)
-                P = IKH@P@IKH.T+M@R@M.T # P(k|k)
-                
+                P = IKH@P@IKH.T+M@R@M.T  # P(k|k)
+
                 PP1[k] = P
                 XX1[k] = x
 
@@ -1155,9 +1166,9 @@ class Model(object):
                     A = AA[k]
                 # G=(PP1[k]@AA[k].T)/PP2[k]
                 try:
-                    G = solve(PP2[k], (PP1[k]@A.T).T, assume_a='pos').T 
-                except:                    
-                    G = solve(PP2[k], (PP1[k]@A.T).T, assume_a='gen').T 
+                    G = solve(PP2[k], (PP1[k]@A.T).T, assume_a='pos').T
+                except:
+                    G = solve(PP2[k], (PP1[k]@A.T).T, assume_a='gen').T
                 x = XX1[k]+G@(x-XX2[k])
                 P = PP1[k]+G@(P-PP2[k])@G.T
 
@@ -1198,9 +1209,9 @@ class Model(object):
                 x, state = solver.run(x)
             else:
                 solver = jaxopt.ScipyBoundedMinimize(
-                fun=J, tol=options["ftol"], method="L-BFGS-B", maxiter=options["maxfun"], options=options)
+                    fun=J, tol=options["ftol"], method="L-BFGS-B", maxiter=options["maxfun"], options=options)
                 x, state = solver.run(x, bounds=(lb, ub))
-                
+
             if verbosity:
                 mse_loss = state.fun_val-.5*LBFGS_rho_x0*np.sum(x**2)
                 print(
@@ -1286,6 +1297,7 @@ class LinearModel(Model):
         else:
             params = None
         self.init(params=params, x0=x0, sigma=sigma, seed=seed)
+        self.sigma = sigma  # required by parallel_fit()
 
         if self.y_in_x:
             @jax.jit
@@ -1322,6 +1334,20 @@ class LinearModel(Model):
         self.output_fcn = output_fcn
         return
 
+    def params2ABCD(self):
+        A, B = self.params[0:2]
+        if self.y_in_x:
+            C = np.hstack(
+                (np.eye(self.ny), np.zeros((self.ny, self.nx-self.ny))))
+            D = np.zeros((self.ny, self.nu))
+        else:
+            C = self.params[2]
+            if self.feedthrough:
+                D = self.params[3]
+            else:
+                D = np.zeros((self.ny, self.nu))
+        return A, B, C, D
+
     def ssdata(self):
         """Retrieve state-space realization of the linear system
 
@@ -1341,19 +1367,6 @@ class LinearModel(Model):
         """
         # Retrieve state-space realization
         A, B, C, D = self.params2ABCD()
-        return A, B, C, D
-
-    def params2ABCD(self):
-        A, B = self.params[0:2]
-        if self.y_in_x:
-            C = np.hstack((np.eye(self.ny), np.zeros((self.ny, self.nx-self.ny))))
-            D = np.zeros((self.ny, self.nu))
-        else:
-            C = self.params[2]
-            if self.feedthrough:
-                D = self.params[3]
-            else:
-                D = np.zeros((self.ny, self.nu))
         return A, B, C, D
 
     def group_lasso_x(self):
@@ -1395,14 +1408,14 @@ class LinearModel(Model):
             return cost
         self.group_lasso_fcn = groupLassoRegU
         return
-    
-    def force_stability(self, rho_A=1.e3, epsilon_A = 1.e-3):
+
+    def force_stability(self, rho_A=1.e3, epsilon_A=1.e-3):
         """Force stability of the linear state-space model by imposing the soft constraint ||A||_2 <= 1. The constraint is mapped into the following custom regularization term in the optimization problem:
-        
+
         rho_A * max{||A||_2^2 − 1 + epsilon_A, 0}^2
-        
+
         where rho_A is a large penalty and epsilon_A is a small positive number used to tighten the constraint.
-        
+
         Parameters
         ----------
         rho_A : float
@@ -1411,12 +1424,328 @@ class LinearModel(Model):
             Tolerance for the constraint ||A||_2 <= 1
         """
         @jax.jit
-        def force_stability(th,x0):
-            A=th[0]
-            return rho_A*jnp.maximum(jnp.linalg.norm(A,2)**2-1.+epsilon_A,0.)**2
+        def force_stability(th, x0):
+            A = th[0]
+            return rho_A*jnp.maximum(jnp.linalg.norm(A, 2)**2-1.+epsilon_A, 0.)**2
 
         self.custom_regularization = force_stability
         return
+
+    def parallel_fit(self, Y, U, seeds, n_jobs):
+        """
+        Fits the model in parallel using multiple seeds.
+
+        Parameters:
+            Y : ndarray or list of ndarrays
+                Training dataset: output data. Y must be a N-by-ny numpy array
+                or a list of Ni-by-ny numpy arrays, where Ni is the length of the i-th experiment.
+            U : ndarray
+                Training dataset: input data. U must be a N-by-nu numpy array 
+                or a list of Ni-by-nu numpy arrays, where Ni is the length of the i-th experiment.            
+            seeds (array-like): The seeds used for initialization.
+            n_jobs (int): The number of parallel jobs to run.
+
+        Returns:
+            list: A list of fitted models.
+        """
+        def single_fit(seed):
+            self.init(sigma=self.sigma, seed=seed)
+            self.fit(Y, U)
+            return self
+        return Parallel(n_jobs=n_jobs)(delayed(single_fit)(seed) for seed in seeds)
+
+
+class qLPVModel(Model):
+    def __init__(self, nx, ny, nu, npar, qlpv_fcn, qlpv_params_init, feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None):
+        """Create the quasi-LPV (Linear Parameter Varying) state-space model structure
+
+            x(k+1) = A(p(k))*x(k) + B(p(k))*u(k)
+              y(k) = C(p(k))*x(k) + D(p(k))*u(k)
+
+              p(k) = f(x(k),u(k),qlpv_params),   dim(p(k)) = npar
+
+              A(p(k)) = A_lin + ∑_{i=1}^{n_p} A_i p(k)_i,   B(p(k)) = B_lin + ∑_{i=1}^{n_p} B_i p(k)_i
+              C(p(k)) = C_lin + ∑_{i=1}^{n_p} C_i p(k)_i,   D(p(k)) = D_lin + ∑_{i=1}^{n_p} D_i p(k)_i
+
+        Parameters
+        ----------
+        nx : int
+            Number of states
+        ny : int
+            Number of outputs
+        nu : int        
+            Number of inputs
+        npar : int  
+            Number of parameters defining the scheduling function f(x,u,theta)
+        qlpv_fcn : callable
+            Function defining the scheduling function f(x,u,qlpv_params)
+        qlpv_params_init : list of ndarrays
+            Initial values of the arrays defining the scheduling function parameters qlpv_params            
+        feedthrough : bool
+            If True, the output depends also on the input u(k), i.e., D(p(k)) is not zero.
+        y_in_x : bool
+            If True, the output is included in the first ny components of the state vector
+        x0 : ndarray or list of ndarrays or None
+            Initial state vector or list of initial state vectors for multiple experiments. If None, x0=0.
+        sigma : float
+            Initial Alin matrix = sigma*I, where I is the identity matrix. Each other matrix in Ap is initialized
+            as 0.2/(1+npar)*I.
+        seed : int
+            Random seed for initialization (default: 0)
+        Ts : float
+            Sampling time
+        """
+
+        super().__init__(nx, ny, nu, state_fcn=None, output_fcn=None, y_in_x=y_in_x, Ts=Ts)
+
+        self.isqLPV = True
+        self.feedthrough = feedthrough
+        self.nqLPVpar = npar
+        nqlpv_params = len(qlpv_params_init)
+        self.nqlpv_params = nqlpv_params
+
+        self.init(qlpv_params_init, sigma, seed, x0)
+        self.isInitialized = True
+        self.sigma = sigma  # required by parallel_fit()
+
+        @jax.jit
+        def state_fcn(x, u, params):
+            qlpv_params = params[:nqlpv_params]
+            p = qlpv_fcn(x, u, qlpv_params)
+            Alin = params[nqlpv_params]
+            Ap = params[nqlpv_params+1]
+            Blin = params[nqlpv_params+2]
+            Bp = params[nqlpv_params+3]
+            x = Alin@x + Blin@u + p@(Ap@x + Bp@u)
+            return x
+
+        if self.y_in_x:
+            @jax.jit
+            def output_fcn(x, u, params):
+                return x[0:self.ny]
+        else:
+            @jax.jit
+            def output_fcn(x, u, params):
+                qlpv_params = params[:nqlpv_params]
+                p = qlpv_fcn(x, u, qlpv_params)
+                Clin = params[nqlpv_params+4]
+                Cp = params[nqlpv_params+5]
+                y = Clin@x + p@(Cp@x)
+                if feedthrough:
+                    Dlin = params[nqlpv_params+6]
+                    Dp = params[nqlpv_params+7]
+                    y += Dlin@u + p@(Dp@u)
+                return y
+
+        self.state_fcn = state_fcn
+        self.output_fcn = output_fcn
+        return
+
+    def init(self, qlpv_params_init, sigma, seed, x0=None):
+
+        jax.config.update('jax_platform_name', 'cpu')
+        if not jax.config.jax_enable_x64:
+            # Enable 64-bit computations
+            jax.config.update("jax_enable_x64", True)
+
+        if x0 is not None:
+            if isinstance(x0, list):
+                Nexp = len(x0)
+                self.x0 = [jnp.array(x0[i]) for i in range(Nexp)]
+            else:
+                self.x0 = jnp.array(x0)
+        else:
+            self.x0 = jnp.zeros(self.nx)
+
+        params = qlpv_params_init.copy()
+
+        lin_model = LinearModel(
+            self.nx, self.ny, self.nu, feedthrough=self.feedthrough, y_in_x=self.y_in_x, x0=self.x0, Ts=self.Ts)
+        lin_model.init(sigma=sigma, seed=seed)
+        Alin, Blin, Clin, Dlin = lin_model.params2ABCD()
+
+        npar = self.nqLPVpar
+        Ap = 0.2/(1.+npar)*jnp.kron(jnp.ones((npar, 1, 1)), jnp.eye(self.nx))
+        # this avoids using the same seed used for LTI model
+        key1, key2 = jax.random.split(jax.random.PRNGKey(seed+1), 2)
+        Bp = 0.1 * jax.random.normal(key1, (npar, self.nx, self.nu))
+        params.extend([Alin, Ap, Blin, Bp])
+
+        if not self.y_in_x:
+            Cp = 0.1 * jax.random.normal(key2, (npar, self.ny, self.nx))
+            params.extend([Clin, Cp])
+            if self.feedthrough:
+                Dp = jnp.zeros((npar, self.ny, self.nu))
+                params.extend([Dlin, Dp])
+        self.params = params
+        return
+
+    def ssdata(self):
+        """Retrieve state-space realization of the quasi-LPV system
+
+            x(k+1) = A(p(k))*x(k) + B(p(k))*u(k)
+              y(k) = C(p(k))*x(k) + D(p(k))*u(k)
+
+              p(k) = f(x(k),u(k),qlpv_params),   dim(p(k)) = npar
+
+              A(p(k)) = A_lin + ∑_{i=1}^{n_p} A_i p(k)_i,   B(p(k)) = B_lin + ∑_{i=1}^{n_p} B_i p(k)_i
+              C(p(k)) = C_lin + ∑_{i=1}^{n_p} C_i p(k)_i,   D(p(k)) = D_lin + ∑_{i=1}^{n_p} D_i p(k)_i
+
+        Returns
+        -------
+        Alin : ndarray
+            baseline A matrix
+        Blin : ndarray
+            baseline B matrix
+        Clin : ndarray
+            baseline C matrix
+        Dlin : ndarray
+            baseline D matrix
+        Ap : ndarray
+            parameter-dependent A matrix components
+        Bp : ndarray
+            parameter-dependent B matrix components
+        Cp : ndarray
+            parameter-dependent C matrix components
+        Dp : ndarray    
+            parameter-dependent D matrix components
+        """
+        nqlpv_params = self.nqlpv_params
+        Alin = self.params[nqlpv_params]
+        Ap = self.params[nqlpv_params+1]
+        Blin = self.params[nqlpv_params+2]
+        Bp = self.params[nqlpv_params+3]
+
+        Clin = np.hstack(
+            (np.eye(self.ny), np.zeros((self.ny, self.nx-self.ny))))
+        Cp = np.zeros((self.nqLPVpar, self.ny, self.nx))
+        Dlin = np.zeros((self.nqLPVpar, self.ny, self.nu))
+        Dp = np.zeros((self.nqLPVpar, self.ny, self.nu))
+        if not self.y_in_x:
+            Clin = self.params[nqlpv_params+4]
+            Cp = self.params[nqlpv_params+5]
+            if self.feedthrough:
+                Dlin = self.params[nqlpv_params+6]
+                Dp = self.params[nqlpv_params+7]
+
+        return Alin, Blin, Clin, Dlin, Ap, Bp, Cp, Dp
+
+    def fit(self, Y, U, LTI_training=True):
+        """
+        Train a dynamical qLPV model using input-output data.
+
+        Parameters:
+        ----------
+        Y : ndarray or list of ndarrays
+            Training dataset: output data. Y must be a N-by-ny numpy array
+            or a list of Ni-by-ny numpy arrays, where Ni is the length of the i-th experiment.
+        U : ndarray
+            Training dataset: input data. U must be a N-by-nu numpy array 
+            or a list of Ni-by-nu numpy arrays, where Ni is the length of the i-th experiment.            
+        LTI_training : bool
+            If True, the LTI matrices Alin, Blin, Clin, Dlin are trained first and used as an initial guess.
+        """
+
+        nx = self.nx
+        if nx < 1:
+            raise (
+                Exception("\033[1mModel order 'nx' must be greater than zero\033[0m"))
+
+        jax.config.update('jax_platform_name', 'cpu')
+        if not jax.config.jax_enable_x64:
+            # Enable 64-bit computations
+            jax.config.update("jax_enable_x64", True)
+
+        if LTI_training:
+            Alin, Blin, Clin, Dlin, _, _, _, _ = self.ssdata()
+            lin_model = LinearModel(nx, self.ny, self.nu, feedthrough=self.feedthrough,
+                                    y_in_x=self.y_in_x, x0=self.x0, Ts=self.Ts, ss=[Alin, Blin, Clin, Dlin])
+            if self.rho_x0 is not None:
+                rho_x0 = self.rho_x0
+            else:
+                rho_x0 = 1.e-4
+            if self.rho_th is not None:
+                rho_th = self.rho_th
+            else:
+                rho_th = 1.e-4
+            lin_model.loss(rho_x0=rho_x0, rho_th=rho_th)
+            if self.iprint is not None:
+                iprint = self.iprint
+            else:
+                iprint = 50
+            if iprint > 0:
+                print("\n\nTraining LTI model...\n\n")
+            lin_model.optimization(
+                adam_epochs=0, lbfgs_epochs=2000, iprint=iprint)
+            lin_model.fit(Y, U)
+            Alin, Blin, Clin, Dlin = lin_model.params2ABCD()
+
+            nqlpv_params = self.nqlpv_params
+            self.params[nqlpv_params] = Alin
+            self.params[nqlpv_params+2] = Blin
+            if not self.y_in_x:
+                self.params[nqlpv_params+4] = Clin
+                if self.feedthrough:
+                    self.params[nqlpv_params+6] = Dlin
+
+            super().fit(Y, U)
+        return
+
+    def group_lasso_p(self):
+        """Group-Lasso regularization on quasi-LPV model matrices Ap, Bp, Cp, Dp to penalize the number of scheduling parameters.
+        """
+
+        @jax.jit
+        def groupLassoRegP(th, x0):
+
+            nqlpv_params = self.nqlpv_params
+            Ap = th[nqlpv_params+1]
+            Bp = th[nqlpv_params+3]
+            if not self.y_in_x:
+                Cp = th[nqlpv_params+5]
+                if self.feedthrough:
+                    Dp = th[nqlpv_params+7]
+
+            cost = 0.
+            for i in range(self.nqLPVpar):
+                cost_i = jnp.sum(Ap[i]**2)+jnp.sum(Bp[i]**2)
+                if not self.y_in_x:
+                    cost_i += jnp.sum(Cp[i]**2)
+                    if self.feedthrough:
+                        cost_i += jnp.sum(Dp[i]**2)
+                cost += jnp.sqrt(cost_i)
+            return cost
+
+        self.group_lasso_fcn = groupLassoRegP
+        return
+
+    def parallel_fit(self, Y, U, qlpv_param_init_fcn, seeds, n_jobs, LTI_training=True):
+        """
+        Fits the model in parallel using multiple seeds.
+
+        Parameters:
+            Y : ndarray or list of ndarrays
+                Training dataset: output data. Y must be a N-by-ny numpy array
+                or a list of Ni-by-ny numpy arrays, where Ni is the length of the i-th experiment.
+            U : ndarray
+                Training dataset: input data. U must be a N-by-nu numpy array 
+                or a list of Ni-by-nu numpy arrays, where Ni is the length of the i-th experiment.            
+            qlpv_param_init_fcn : callable
+                Function to initialize the parameters of the scheduling function qlpv_params given a seed.
+            seeds (array-like): The seeds used for initialization.
+            n_jobs (int): The number of parallel jobs to run.
+
+        Returns:
+            list: A list of fitted models.
+        """
+        def single_fit(seed):
+            qlpv_params_init = qlpv_param_init_fcn(seed)
+            self.init(qlpv_params_init, self.sigma, seed, x0=None)
+            self.fit(Y, U, LTI_training=LTI_training)
+            return self
+        models = Parallel(n_jobs=n_jobs)(
+            delayed(single_fit)(seed=seed) for seed in seeds)
+        return models
 
 
 class RNN(Model):
@@ -1907,7 +2236,7 @@ class StaticModel(object):
             self.fit(Y, U)
             return self
         return Parallel(n_jobs=n_jobs)(delayed(single_fit)(seed) for seed in seeds)
-        
+
     def sparsity_analysis(self):
         line = "-"*50 + "\n"
         txt = "Model sparsity:\n" + line

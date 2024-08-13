@@ -114,7 +114,7 @@ print(model.sparsity_analysis())
 ########################################################################################
 # Use group-Lasso regularization with penalty tau_g to reduce model order
 model.loss(rho_x0=1.e-3, rho_th=1.e-2, tau_g=0.1)
-model.group_lasso_x()  # introduce group Lasso function to reduce number of states
+model.group_lasso_x()  # introduce group-Lasso penalty to reduce the number of states
 model.init()  # reinitialize model coefficients
 model.fit(Ys_train, Us_train)
 t0 = model.t_solve
@@ -147,7 +147,7 @@ Ys_test = (Y_test-ymean)*ygain  # use same scaling as for training data
 Us_test = (U_test-umean)*ugain
 
 model.loss(rho_x0=1.e-3, rho_th=1.e-2, tau_g=0.15)
-model.group_lasso_u()  # introduce group Lasso function
+model.group_lasso_u()  # introduce group-Lasso penalty to reduce the number of inputs
 model.init()  # reinitialize model coefficients
 model.fit(Ys_train, Us_train)
 t0 = model.t_solve

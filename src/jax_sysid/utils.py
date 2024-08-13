@@ -217,7 +217,7 @@ def compute_scores(Y_train, Yhat_train, Y_test=None, Yhat_test=None, fit='R2'):
             if not use_test:
                 score_test[i] = np.nan
 
-            text += f"{fit.capitalize()} score: training = {score_train[i]: 5.4f}{unit}"
+            text += f"{fit} score: training = {score_train[i]: 5.4f}{unit}"
             if use_test:
                 text += f", test = {score_test[i]: 5.4f}{unit}"
             msg += '\n' + text
@@ -260,7 +260,7 @@ def compute_scores(Y_train, Yhat_train, Y_test=None, Yhat_test=None, fit='R2'):
         if not use_test:
             score_test = np.nan
 
-    msg += f"{fit.capitalize()} score:  training = {np.sum(score_train) / ny: 5.4f}{unit}"
+    msg += f"{fit} score:  training = {np.sum(score_train) / ny: 5.4f}{unit}"
     if use_test:
         msg += f", test = {np.sum(score_test) / ny: 5.4f}{unit}"
     return score_train, score_test, msg

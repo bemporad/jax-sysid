@@ -202,7 +202,7 @@ def adam_solver(JdJ, z, solver_iters, adam_eta, iprint, params_min=None, params_
             ndf = np.sum([np.linalg.norm(df[i])
                           for i in range(nz)])
             str += f", |grad f| = {ndf: 8.6f}"
-            str += f", iter = {k}"
+            str += f", iter = {k+1}"
             loss_log.set_description_str(str)
             iters_tqdm.update(1)
 
@@ -333,22 +333,10 @@ class Model(object):
         self.isqLPV = False
         self.Ts = Ts  # sample time
 
-        self.output_loss = None
-        self.rho_x0 = None
-        self.rho_th = None
-        self.tau_th = None
-        self.tau_g = None
-        self.zero_coeff = None
-        self.xsat = None
-        self.train_x0 = None
+        self.loss() # define default loss function
+        self.optimization() # define default optimization parameters
 
-        self.adam_eta = None
-        self.adam_epochs = None
-        self.lbfgs_epochs = None
-        self.iprint = None
-        self.memory = None
-
-        self.isInitialized = False
+        self.isInitialized = False # model parameters have not been initialized yet
 
         self.x0 = None
         self.Jopt = None
@@ -1842,35 +1830,23 @@ class StaticModel(object):
 
     def __init__(self, ny, nu, output_fcn=None):
         """
-        Initialize model structure
+        Initialize model structure.
 
-        ny: number of outputs
+        ny (int) : number of outputs
 
-        nu: number of inputs
+        nu (int) : number of inputs
 
-        output_fcn: function handle to the output function y(k)=output_fcn(u(k),params).
+        output_fcn (function) : function handle to the output function y(k)=output_fcn(u(k),params).
         The function must have the signature f(u, params) where u is the input and params is a list of ndarrays of parameters. The function must be vectorized with respect to u, i.e., it must be able to handle a matrix of inputs u, one row per input value. The function must return a matrix of outputs y, where each row corresponds to an input in u.
         """
+        
         self.ny = ny  # number of outputs
         self.nu = nu  # number of inputs
         self.output_fcn = output_fcn
 
-        self.output_loss = None
-        self.rho_x0 = None
-        self.rho_th = None
-        self.tau_th = None
-        self.tau_g = None
-        self.zero_coeff = None
-        self.xsat = None
-        self.train_x0 = None
-
-        self.adam_eta = None
-        self.adam_epochs = None
-        self.lbfgs_epochs = None
-        self.iprint = None
-        self.memory = None
-
-        self.isInitialized = False
+        self.loss() # define default loss function
+        self.optimization() # define default optimization parameters
+        self.isInitialized = False # model parameters are not initialized yet
 
         self.Jopt = None
         self.t_solve = None

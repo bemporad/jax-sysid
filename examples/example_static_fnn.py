@@ -15,10 +15,10 @@ import numpy as np
 
 plotfigs = True  # set to True to plot figures
 
-U, Y = fetch_data("529_pollen", return_X_y=True, local_cache_dir='./datasets/')
+U, Y = fetch_data("529_pollen", return_X_y=True)
 tau_th = 0.002
 zero_coeff = 1.e-4
-# U,Y = fetch_data("225_puma8NH", return_X_y=True, local_cache_dir='./datasets/'); tau_th=0.001; zero_coeff=1.e-4
+# U,Y = fetch_data("225_puma8NH", return_X_y=True); tau_th=0.001; zero_coeff=1.e-4
 Y = np.atleast_2d(Y).T
 
 # Data generation

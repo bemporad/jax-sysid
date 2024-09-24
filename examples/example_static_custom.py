@@ -49,14 +49,25 @@ if not jax.config.jax_enable_x64:
 
 # Define the static model using a custom function. The function must have the signature f(u, params) where u is the input and params is a list of ndarrays of parameters. The function must be vectorized with respect to u, i.e., it must be able to handle a matrix of inputs u, one row per input value. The function must return a matrix of outputs y, where each row corresponds to an input in u.
 
+use_vmap = False # use jax.vmap to vectorize the model function
 
-@jax.jit
-def output_fcn(u, params):
-    W1, b1, W2, b2 = params
-    y = W1@u.T+b1
-    y = W2@jnp.arctan(y)+b2
-    return y.T
-
+if not use_vmap:
+    # define vectorized model function directly
+    @jax.jit
+    def output_fcn(u, params):
+        W1, b1, W2, b2 = params
+        y = W1@u.T+b1
+        y = W2@jnp.arctan(y)+b2
+        return y.T
+else:
+    @jax.jit
+    def output_fcn_model(u, params):
+        # returns output for a single input u
+        W1, b1, W2, b2 = params
+        y = W1@u.reshape(-1,1)+b1 # reshape input u to a nu-by-1 matrix
+        y = W2@jnp.arctan(y)+b2
+        return y.reshape(-1) # y is a vector of ny elements
+    output_fcn = jax.jit(jax.vmap(output_fcn_model, in_axes=(0, None)))
 
 model = StaticModel(ny, nu, output_fcn)
 nn = 10  # number of neurons

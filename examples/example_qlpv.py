@@ -225,7 +225,7 @@ for model in models:
     id+=1
 best_model = models[best_id]
 
-print("\nTraining results\n{'-'*30}")
+print(f"\nTraining results\n{'-'*30}")
 print(f"#scheduling vars = {npar},               {msg}")
 print(f"#scheduling vars = {npar} (group-Lasso), {msg2}")
 for i in removable_parameters:

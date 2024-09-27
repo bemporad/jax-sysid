@@ -2,7 +2,7 @@
 """
 jax-sysid: A Python package for linear and nonlinear system identification and nonlinear regression/classification using JAX.
 
-(C) 2024 A. Bemporad, March 6, 2024
+(C) 2024 A. Bemporad
 """
 
 import numpy as np
@@ -11,7 +11,6 @@ import jax
 import jax.numpy as jnp
 import jaxopt
 from functools import partial
-from scipy.linalg import solve
 import tqdm
 import sys
 from jax_sysid.utils import lbfgs_options, vec_reshape
@@ -333,10 +332,10 @@ class Model(object):
         self.isqLPV = False
         self.Ts = Ts  # sample time
 
-        self.loss() # define default loss function
-        self.optimization() # define default optimization parameters
+        self.loss()  # define default loss function
+        self.optimization()  # define default optimization parameters
 
-        self.isInitialized = False # model parameters have not been initialized yet
+        self.isInitialized = False  # model parameters have not been initialized yet
 
         self.x0 = None
         self.Jopt = None
@@ -1058,7 +1057,7 @@ class Model(object):
         lbfgs_epochs : int
             Max number of L-BFGS iterations
         Q : ndarray
-            Process noise covariance matrix, by default 1.e-8*I
+            Process noise covariance matrix, by default 1.e-5*I. Matrix Q could be set smaller (e.g., 1.e-8*I),although in the case of very good models the covariance matrix of the state estimation error may become very small and RTS smoothing numerically unstable, and higher values of Q should be used.
         R : ndarray
             Measurement noise covariance matrix, by default the identity matrix I
 
@@ -1073,7 +1072,7 @@ class Model(object):
 
         isLinear = self.isLinear
         if isLinear:
-            A, _, C, _ = self.params2ABCD()
+            A_LTI, _, C_LTI, _ = self.params2ABCD()
         else:
             @jax.jit
             def Ck(x, u):
@@ -1082,88 +1081,117 @@ class Model(object):
             @jax.jit
             def Ak(x, u):
                 return jax.jacrev(self.state_fcn)(x, u=u, params=self.params)
-            AA = np.empty((N, nx, nx))  # A(k)
 
         if rho_x0 is None:
             rho_x0 = self.rho_x0
-        PP1 = np.empty((N, nx, nx))  # P(k | k)
-        PP2 = np.empty((N, nx, nx))  # P(k + 1 | k)
-        XX1 = np.empty((N, nx))  # x(k | k)
-        XX2 = np.empty((N, nx))  # x(k + 1 | k)
         if R is None:
             R = np.eye(ny)
         if Q is None:
-            Q = 1.e-8 * np.eye(nx)
+            Q = 1.e-5 * np.eye(nx)
+
+        # L2-regularization on initial state x0, 0.5*rho_x0*||x0||_2^2
+        P = np.eye(nx) / (rho_x0 * N)
+        x = np.zeros(nx)
 
         # Forward EKF pass:
+        @jax.jit
+        def EKF_update(state, yuk):
+            x, P, mse_loss = state
+            yk = yuk[:ny]
+            u = yuk[ny:]
+
+            # measurement update
+            y = self.output_fcn(x, u, self.params)
+            if not isLinear:
+                Ckk = Ck(x, u)
+            else:
+                Ckk = C_LTI
+            PC = P @ Ckk.T
+            # M = PC / (R + C @PC) # this solves the linear system M*(R + C @PC) = PC
+            # Note: Matlab's mrdivide A / B = (B'\A')' = np.linalg.solve(B.conj().T, A.conj().T).conj().T
+            M = jax.scipy.linalg.solve((R+Ckk@PC), PC.T, assume_a='pos').T
+            e = yk-y
+            mse_loss += np.sum(e**2)  # just for monitoring purposes
+            x1 = x + M@e  # x(k | k)
+
+            # Standard Kalman measurement update
+            # P -= M@PC.T
+            # P = (P + P.T)/2. # P(k|k)
+
+            # Joseph stabilized covariance update
+            IKH = -M@Ckk
+            IKH += jnp.eye(nx)
+            P1 = IKH@P@IKH.T+M@R@M.T  # P(k|k)
+
+            # Time update
+            if not isLinear:
+                Akk = Ak(x1, u)
+            else:
+                Akk = A_LTI
+            P2 = Akk@P1@Akk.T+Q
+            # P2 = (P2+P2.T)/2.
+            x2 = self.state_fcn(x1, u, self.params)
+            if not isLinear:
+                output = (x1, P1, x2, P2, Akk)
+            else:
+                # Avoid returning the same A matrix everytime
+                output = (x1, P1, x2, P2)
+
+            return (x2, P2, mse_loss), output
+
+        @jax.jit
+        def RTS_update(state, input):
+            x, P = state
+            if not isLinear:
+                P1, P2, x1, x2, A = input
+            else:
+                P1, P2, x1, x2 = input  # The A matrix is the LTI state-update matrix defined earlier
+                A = A_LTI
+
+            # G=(PP1[k]@AA[k].T)/PP2[k]
+            try:
+                G = jax.scipy.linalg.solve(P2, (P1@A.T).T, assume_a='pos').T
+            except:
+                G = jax.scipy.linalg.solve(P2, (P1@A.T).T, assume_a='gen').T
+            x = x1+G@(x-x2)
+            P = P1+G@(P-P2)@G.T
+            return (x, P), None
+
         # L2-regularization on initial state x0, 0.5*rho_x0*||x0||_2^2
         P = np.eye(nx) / (rho_x0 * N)
         x = np.zeros(nx)
 
         for epoch in range(RTS_epochs):
+            mse_loss = 0.
 
-            if verbosity:
-                therange = tqdm.trange(
-                    N, ncols=30, bar_format='{percentage:3.0f}%|{bar}|', leave=True)
+            # Forward EKF pass
+            state = (x, P, mse_loss)
+            state, output = jax.lax.scan(EKF_update, state, np.hstack((Y, U)))
+            if not isLinear:
+                XX1, PP1, XX2, PP2, AA = output
             else:
-                therange = range(N)
-            mse_loss = 0.0
-
-            for k in therange:
-                u = U[k]
-
-                # measurement update
-                y = self.output_fcn(x, u, self.params)
-                if not isLinear:
-                    C = Ck(x, u)
-                PC = P @ C.T
-                # M = PC / (R + C @PC) # this solves the linear system M*(R + C @PC) = PC
-                # Note: Matlab's mrdivide A / B = (B'\A')' = np.linalg.solve(B.conj().T, A.conj().T).conj().T
-                M = solve((R+C@PC), PC.T, assume_a='pos').T
-                e = Y[k]-y
-                mse_loss += np.sum(e**2)  # just for monitoring purposes
-                x += M@e  # x(k | k)
-
-                # Standard Kalman measurement update
-                # P -= M@PC.T
-                # P = (P + P.T)/2. # P(k|k)
-
-                # Joseph stabilized covariance update
-                IKH = -M@C
-                IKH += jnp.eye(nx)
-                P = IKH@P@IKH.T+M@R@M.T  # P(k|k)
-
-                PP1[k] = P
-                XX1[k] = x
-
-                # Time update
-                if not isLinear:
-                    A = Ak(x, u)
-                    AA[k] = A
-                P = A@P@A.T+Q
-                # P = (P+P.T)/2.
-                x = self.state_fcn(x, u, self.params)
-                PP2[k] = P
-                XX2[k] = x
+                XX1, PP1, XX2, PP2 = output
+            # PP1 = P(k | k)
+            # PP2 = P(k + 1 | k)
+            # XX1 = x(k | k)
+            # XX2 = x(k + 1 | k)
+            mse_loss = state[2]/N
 
             # RTS smoother pass:
             x = XX1[N-1]
             P = PP1[N-1]
-            for k in range(N-1, -1, -1):
-                if not isLinear:
-                    A = AA[k]
-                # G=(PP1[k]@AA[k].T)/PP2[k]
-                try:
-                    G = solve(PP2[k], (PP1[k]@A.T).T, assume_a='pos').T
-                except:
-                    G = solve(PP2[k], (PP1[k]@A.T).T, assume_a='gen').T
-                x = XX1[k]+G@(x-XX2[k])
-                P = PP1[k]+G@(P-PP2[k])@G.T
+            state = (x, P)
+            if not isLinear:
+                input = (PP1[::-1], PP2[::-1], XX1[::-1], XX2[::-1], AA[::-1])
+            else:
+                input = (PP1[::-1], PP2[::-1], XX1[::-1], XX2[::-1])
+            state, _ = jax.lax.scan(RTS_update, state, input)
+            x, P = state
 
             if verbosity:
                 sys.stdout.write('\033[F')
                 print(
-                    f"\nRTS smoothing, epoch: {epoch+1: 3d}/{RTS_epochs: 3d}, MSE loss = {mse_loss/N: 8.6f}")
+                    f"\nRTS smoothing, epoch: {epoch+1: 3d}/{RTS_epochs: 3d}, MSE loss = {mse_loss: 8.6f}")
 
         isstatebounded = self.x0_min is not None or self.x0_max is not None
         if isstatebounded:
@@ -1204,7 +1232,6 @@ class Model(object):
                 mse_loss = state.fun_val-.5*LBFGS_rho_x0*np.sum(x**2)
                 print(
                     f"\nFinal loss MSE (after LBFGS refinement) = {mse_loss: 8.6f}")
-
         return x
 
     def sparsity_analysis(self):
@@ -1839,14 +1866,14 @@ class StaticModel(object):
         output_fcn (function) : function handle to the output function y(k)=output_fcn(u(k),params).
         The function must have the signature f(u, params) where u is the input and params is a list of ndarrays of parameters. The function must be vectorized with respect to u, i.e., it must be able to handle a matrix of inputs u, one row per input value. The function must return a matrix of outputs y, where each row corresponds to an input in u.
         """
-        
+
         self.ny = ny  # number of outputs
         self.nu = nu  # number of inputs
         self.output_fcn = output_fcn
 
-        self.loss() # define default loss function
-        self.optimization() # define default optimization parameters
-        self.isInitialized = False # model parameters are not initialized yet
+        self.loss()  # define default loss function
+        self.optimization()  # define default optimization parameters
+        self.isInitialized = False  # model parameters are not initialized yet
 
         self.Jopt = None
         self.t_solve = None

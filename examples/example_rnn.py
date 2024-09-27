@@ -22,7 +22,7 @@ nx = 3  # number of states
 ny = 1  # number of outputs
 nu = 1  # number of inputs
 
-N_train = 10000  # number of training data
+N_train = 1000  # number of training data
 N_test = 1000  # number of test data
 Ts = 1.  # sample time
 
@@ -103,7 +103,7 @@ Yshat_train, _ = model.predict(model.x0, Us_train)
 Yhat_train = unscale(Yshat_train, ymean, ygain)
 
 # use RTS Smoother to learn x0
-x0_test = model.learn_x0(Us_test, Ys_test, RTS_epochs=3)
+x0_test = model.learn_x0(Us_test, Ys_test, RTS_epochs=10)
 Yshat_test, _ = model.predict(x0_test, Us_test)
 Yhat_test = unscale(Yshat_test, ymean, ygain)
 R2, R2_test, msg = compute_scores(

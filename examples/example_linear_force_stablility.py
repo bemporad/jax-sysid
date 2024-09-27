@@ -7,7 +7,7 @@ Linear system identification example with stability enforcement.
 """
 
 import matplotlib.pyplot as plt
-from jax_sysid.utils import standard_scale, unscale, compute_scores, print_eigs
+from jax_sysid.utils import compute_scores, print_eigs
 from jax_sysid.models import LinearModel
 import numpy as np
 

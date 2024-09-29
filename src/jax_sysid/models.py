@@ -1089,10 +1089,6 @@ class Model(object):
         if Q is None:
             Q = 1.e-5 * np.eye(nx)
 
-        # L2-regularization on initial state x0, 0.5*rho_x0*||x0||_2^2
-        P = np.eye(nx) / (rho_x0 * N)
-        x = np.zeros(nx)
-
         # Forward EKF pass:
         @jax.jit
         def EKF_update(state, yuk):
@@ -1178,8 +1174,8 @@ class Model(object):
             mse_loss = state[2]/N
 
             # RTS smoother pass:
-            x = XX1[N-1]
-            P = PP1[N-1]
+            x = XX2[N-1]
+            P = PP2[N-1]
             state = (x, P)
             if not isLinear:
                 input = (PP1[::-1], PP2[::-1], XX1[::-1], XX2[::-1], AA[::-1])
@@ -1193,12 +1189,18 @@ class Model(object):
                 print(
                     f"\nRTS smoothing, epoch: {epoch+1: 3d}/{RTS_epochs: 3d}, MSE loss = {mse_loss: 8.6f}")
 
+        x = np.array(x)
+
         isstatebounded = self.x0_min is not None or self.x0_max is not None
         if isstatebounded:
             lb = self.x0_min
+            if isinstance(lb, list):
+                lb = lb[0]
             if lb is None:
                 lb = -np.inf*np.ones(nx)
             ub = self.x0_max
+            if isinstance(ub, list):
+                ub = ub[0]
             if ub is None:
                 ub = np.inf*np.ones(nx)
             if np.any(x < lb) or np.any(x > ub):
@@ -1227,6 +1229,7 @@ class Model(object):
                 solver = jaxopt.ScipyBoundedMinimize(
                     fun=J, tol=options["ftol"], method="L-BFGS-B", maxiter=options["maxfun"], options=options)
                 x, state = solver.run(x, bounds=(lb, ub))
+            x = np.array(x)
 
             if verbosity:
                 mse_loss = state.fun_val-.5*LBFGS_rho_x0*np.sum(x**2)

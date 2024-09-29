@@ -19,7 +19,7 @@ if not jax.config.jax_enable_x64:
     jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
 
 
-class Test_glis_glisp(unittest.TestCase):
+class Test_jax_sysid(unittest.TestCase):
 
     def test_linear_vs_nonlinear(self):
         # Data generation

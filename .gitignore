@@ -1,6 +1,4 @@
 
-dist/jax-sysid-0.1.0.tar.gz
-dist/jax_sysid-0.1.0-py3-none-any.whl
 src/jax_sysid.egg-info/dependency_links.txt
 src/jax_sysid.egg-info/PKG-INFO
 src/jax_sysid.egg-info/requires.txt

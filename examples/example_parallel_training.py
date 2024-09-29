@@ -230,3 +230,5 @@ for model in models:
         Y_train, Yhat_train, Y_test, Yhat_test, fit='R2')
     print(f"seed = {seeds[id]}: {msg}")
     id += 1
+
+print("Parallel training done.")

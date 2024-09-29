@@ -4,23 +4,18 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
  
 # Contents
 
-* [Package description](#description)
-
-* [Installation](#install)
-
-* [Basic usage](#basic-usage)
-    * [Linear state-space models](#linear)
-    * [Nonlinear system identification and RNNs](#nonlinear)
-    * [Quasi-Linear Parameter-Varying models](#quasiLPV)
-    * [Static models and nonlinear regression/classification](#static)
-
-* [Contributors](#contributors)
-
-* [Acknowledgments](#acknowledgments)
-
-* [Citing jax-sysid](#bibliography)
-
-* [License](#license)
+- [Contents](#contents)
+  - [Package description](#package-description)
+  - [Installation](#installation)
+  - [Basic usage](#basic-usage)
+    - [Linear state-space models](#linear-state-space-models)
+    - [Nonlinear system identification and RNNs](#nonlinear-system-identification-and-rnns)
+    - [Quasi-Linear Parameter-Varying (qLPV) models](#quasi-linear-parameter-varying-qlpv-models)
+    - [Static models and nonlinear regression/classification](#static-models-and-nonlinear-regressionclassification)
+  - [Contributors](#contributors)
+  - [Acknowledgments](#acknowledgments)
+  - [Citing jax-sysid](#citing-jax-sysid)
+  - [License](#license)
 
 
 <a name="description"></a>
@@ -481,7 +476,7 @@ This software is distributed without any warranty. Please cite the paper below i
 
 <a name="acknowledgments"></a>
 ## Acknowledgments
-We thank Roland Toth for suggesting the use of Kung's method for initializing linear state-space models.
+We thank Roland Toth for suggesting the use of Kung's method for initializing linear state-space models and Kui Xie for feedback on the reconstruction of the initial state via EKF + RTS smoothing. 
 
 <a name="bibliography"></a>
 ## Citing jax-sysid

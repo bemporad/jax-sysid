@@ -1026,6 +1026,8 @@ class Model(object):
             list: A list of fitted models.
         """
         def single_fit(seed):
+            if not jax.config.jax_enable_x64:
+                jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
             self.init(params=init_fcn(seed))
             self.fit(Y, U)
             return self
@@ -1467,6 +1469,8 @@ class LinearModel(Model):
             list: A list of fitted models.
         """
         def single_fit(seed):
+            if not jax.config.jax_enable_x64:
+                jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
             self.init(sigma=self.sigma, seed=seed)
             self.fit(Y, U)
             return self
@@ -1757,6 +1761,8 @@ class qLPVModel(Model):
             list: A list of fitted models.
         """
         def single_fit(seed):
+            if not jax.config.jax_enable_x64:
+                jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
             qlpv_params_init = qlpv_param_init_fcn(seed)
             self.init(qlpv_params_init, self.sigma, seed, x0=None)
             self.fit(Y, U, LTI_training=LTI_training)
@@ -2238,6 +2244,8 @@ class StaticModel(object):
             list: A list of fitted models.
         """
         def single_fit(seed):
+            if not jax.config.jax_enable_x64:
+                jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
             self.init(params=init_fcn(seed))
             self.fit(Y, U)
             return self

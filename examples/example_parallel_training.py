@@ -39,32 +39,30 @@ def truesystem(x0, U, qx, qy):
     N_train = U.shape[0]
     x = x0.copy()
     Y = np.empty((N_train, ny))
+    X = np.empty((N_train, nx))
     for k in range(N_train):
-        if k == 0:
-            x = x0
-        else:
-            x[0] = .5*np.sin(x[0]) + B[0, :]@U[k-1] * \
-                np.cos(x[1]/2.) + qx * np.random.randn(1)
-            x[1] = .6*np.sin(x[0]+x[2]) + B[1, :]@U[k-1] * \
-                np.arctan(x[0]+x[1]) + qx * np.random.randn(1)
-            x[2] = .4*np.exp(-x[1]) + B[2, :]@U[k-1] * \
-                np.sin(-x[0]/2.) + qx * np.random.randn(1)
+        X[k] = x
         Y[k] = np.arctan(C @ x**3) + qy * np.random.randn(ny)
-    return Y
-
+        x[0] = .5*np.sin(X[k,0]) + B[0, :]@U[k-1] * \
+            np.cos(X[k,1]/2.) + qx * np.random.randn()
+        x[1] = .6*np.sin(X[k,0]+X[k,2]) + B[1, :]@U[k-1] * \
+            np.arctan(X[k,0]+X[k,1]) + qx * np.random.randn()
+        x[2] = .4*np.exp(-X[k,1]) + B[2, :]@U[k-1] * \
+            np.sin(-X[k,0]/2.) + qx * np.random.randn()
+    return Y, X
 
 qy = 0.01  # output noise std
 qx = 0.01  # process noise std
 U_train = np.random.rand(N_train, nu)-0.5
 x0_train = np.zeros(nx)
-Y_train = truesystem(x0_train, U_train, qx, qy)
+Y_train, _ = truesystem(x0_train, U_train, qx, qy)
 
 Ys_train, ymean, ygain = standard_scale(Y_train)
 Us_train, umean, ugain = standard_scale(U_train)
 
 U_test = np.random.rand(N_test, nu)-0.5
 x0_test = np.zeros(nx)
-Y_test = truesystem(x0_test, U_test, qx, qy)
+Y_test, _ = truesystem(x0_test, U_test, qx, qy)
 Ys_test = (Y_test-ymean)*ygain  # use same scaling as for training data
 Us_test = (U_test-umean)*ugain
 
@@ -144,14 +142,18 @@ best_model = models[best_id]
 print(f"\nBest R2-score achieved on test data = {best_R2}")
 
 if False:
-    # Parallel training of linear models. In this case, we get the same results even when the model is initilized from the same seed, although different state-space realizations
+    # Parallel training of linear models. 
     # -----------------------------------
     model = LinearModel(nx, ny, nu, feedthrough=False)
-    model.loss(rho_x0=1.e-3, rho_th=1.e-2)
+    model.loss(rho_x0=1.e-3, rho_th=1.e-6)
     # number of epochs for Adam and L-BFGS-B optimization
     model.optimization(adam_epochs=0, lbfgs_epochs=1000)
     models = model.parallel_fit(
         Ys_train, Us_train, seeds=range(10), n_jobs=10)
+    
+    best_R2 = -np.inf
+    best_id = -1
+    id = 0
     for model in models:
         x0_test = model.learn_x0(Us_test, Ys_test)
         Yshat_train, _ = model.predict(model.x0, Us_train)
@@ -161,6 +163,12 @@ if False:
         R2, R2_test, msg = compute_scores(
             Y_train, Yhat_train, Y_test, Yhat_test, fit='R2')
         print(msg)
+        if float(R2_test) > best_R2:
+            best_R2 = float(R2_test)
+            best_id = id
+        id += 1
+    best_model = models[best_id]
+    print(f"\nBest R2-score achieved on test data = {best_R2}")
 
 # Parallel training of static models:
 U, Y = fetch_data("529_pollen", return_X_y=True)

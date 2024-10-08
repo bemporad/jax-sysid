@@ -34,7 +34,6 @@ Ts = 1.  # sample time
 B = np.floor(np.random.randn(nx, nu)*10.)/10.
 C = np.floor(np.random.randn(ny, nx)*10.)/10.
 
-
 def truesystem(x0, U, qx, qy):
     # system generating the training and test dataset
     N_train = U.shape[0]
@@ -43,18 +42,14 @@ def truesystem(x0, U, qx, qy):
     X = np.empty((N_train, nx))
     for k in range(N_train):
         X[k] = x
-        if k == 0:
-            x = x0
-        else:
-            x[0] = .5*np.sin(x[0]) + B[0, :]@U[k-1] * \
-                np.cos(x[1]/2.) + qx * np.random.randn(1)
-            x[1] = .6*np.sin(x[0]+x[2]) + B[1, :]@U[k-1] * \
-                np.arctan(x[0]+x[1]) + qx * np.random.randn(1)
-            x[2] = .4*np.exp(-x[1]) + B[2, :]@U[k-1] * \
-                np.sin(-x[0]/2.) + qx * np.random.randn(1)
         Y[k] = np.arctan(C @ x**3) + qy * np.random.randn(ny)
+        x[0] = .5*np.sin(X[k,0]) + B[0, :]@U[k-1] * \
+            np.cos(X[k,1]/2.) + qx * np.random.randn()
+        x[1] = .6*np.sin(X[k,0]+X[k,2]) + B[1, :]@U[k-1] * \
+            np.arctan(X[k,0]+X[k,1]) + qx * np.random.randn()
+        x[2] = .4*np.exp(-X[k,1]) + B[2, :]@U[k-1] * \
+            np.sin(-X[k,0]/2.) + qx * np.random.randn()
     return Y, X
-
 
 qy = 0.01  # output noise std
 qx = 0.01  # process noise std
@@ -145,7 +140,7 @@ if plotfigs:
 # Repeat with group-Lasso regularization to possibly reduce the number of scheduling variables
 model = qLPVModel(nx, ny, nu, npar, qlpv_fcn, qlpv_params_init,
                 feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None)
-model.loss(rho_th=rho_th, tau_th=0., tau_g=0.02, zero_coeff=1.e-4)
+model.loss(rho_th=rho_th, tau_th=0., tau_g=0.1, zero_coeff=1.e-4)
 model.group_lasso_p()
 model.optimization(adam_epochs=adam_epochs,
                 lbfgs_epochs=lbfgs_epochs, memory=memory, iprint=iprint)

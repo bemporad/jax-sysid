@@ -29,38 +29,35 @@ Ts = 1.  # sample time
 B = np.random.randn(nx, nu)
 C = np.random.randn(ny, nx)
 
-
 def truesystem(x0, U, qx, qy):
     # system generating the training and test dataset
     N_train = U.shape[0]
     x = x0.copy()
     Y = np.empty((N_train, ny))
+    X = np.empty((N_train, nx))
     for k in range(N_train):
-        if k == 0:
-            x = x0
-        else:
-            x[0] = .5*np.sin(x[0]) + B[0, :]@U[k-1] * \
-                np.cos(x[1]/2.) + qx * np.random.randn(1)
-            x[1] = .6*np.sin(x[0]+x[2]) + B[1, :]@U[k-1] * \
-                np.arctan(x[0]+x[1]) + qx * np.random.randn(1)
-            x[2] = .4*np.exp(-x[1]) + B[2, :]@U[k-1] * \
-                np.sin(-x[0]/2.) + qx * np.random.randn(1)
+        X[k] = x
         Y[k] = np.arctan(C @ x**3) + qy * np.random.randn(ny)
-    return Y
-
+        x[0] = .5*np.sin(X[k,0]) + B[0, :]@U[k-1] * \
+            np.cos(X[k,1]/2.) + qx * np.random.randn()
+        x[1] = .6*np.sin(X[k,0]+X[k,2]) + B[1, :]@U[k-1] * \
+            np.arctan(X[k,0]+X[k,1]) + qx * np.random.randn()
+        x[2] = .4*np.exp(-X[k,1]) + B[2, :]@U[k-1] * \
+            np.sin(-X[k,0]/2.) + qx * np.random.randn()
+    return Y, X
 
 qy = 0.01  # output noise std
 qx = 0.01  # process noise std
 U_train = np.random.rand(N_train, nu)-0.5
 x0_train = np.zeros(nx)
-Y_train = truesystem(x0_train, U_train, qx, qy)
+Y_train, _ = truesystem(x0_train, U_train, qx, qy)
 
 Ys_train, ymean, ygain = standard_scale(Y_train)
 Us_train, umean, ugain = standard_scale(U_train)
 
 U_test = np.random.rand(N_test, nu)-0.5
 x0_test = np.zeros(nx)
-Y_test = truesystem(x0_test, U_test, qx, qy)
+Y_test, _ = truesystem(x0_test, U_test, qx, qy)
 Ys_test = (Y_test-ymean)*ygain  # use same scaling as for training data
 Us_test = (U_test-umean)*ugain
 
@@ -92,7 +89,7 @@ class FY(nn.Module):
 
 model = RNN(nx, ny, nu, FX=FX, FY=FY, x_scaling=0.1)
 # L1+L2-regularization on initial state and model coefficients
-model.loss(rho_x0=1.e-4, rho_th=1.e-4, tau_th=0.0002)
+model.loss(rho_x0=1.e-4, rho_th=1.e-8, tau_th=0.000015)
 # number of epochs for Adam and L-BFGS-B optimization
 model.optimization(adam_epochs=0, lbfgs_epochs=2000)
 model.fit(Ys_train, Us_train)

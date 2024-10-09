@@ -34,7 +34,7 @@ Ts = 1.  # sample time
 B = np.floor(np.random.randn(nx, nu)*10.)/10.
 C = np.floor(np.random.randn(ny, nx)*10.)/10.
 
-def truesystem(x0, U, qx, qy):
+def truesystem(x0, U, D, qx, qy):
     # system generating the training and test dataset
     N_train = U.shape[0]
     x = x0.copy()
@@ -42,27 +42,29 @@ def truesystem(x0, U, qx, qy):
     X = np.empty((N_train, nx))
     for k in range(N_train):
         X[k] = x
-        Y[k] = np.arctan(C @ x**3) + qy * np.random.randn(ny)
-        x[0] = .5*np.sin(X[k,0]) + B[0, :]@U[k-1] * \
-            np.cos(X[k,1]/2.) + qx * np.random.randn()
-        x[1] = .6*np.sin(X[k,0]+X[k,2]) + B[1, :]@U[k-1] * \
-            np.arctan(X[k,0]+X[k,1]) + qx * np.random.randn()
-        x[2] = .4*np.exp(-X[k,1]) + B[2, :]@U[k-1] * \
-            np.sin(-X[k,0]/2.) + qx * np.random.randn()
+        Y[k] = np.arctan(C @ x**3) + qy * D[k,nx:]
+        x[0] = .5*np.sin(X[k,0]) + B[0, :]@U[k] * \
+            np.cos(X[k,1]/2.) + qx * D[k,0]
+        x[1] = .6*np.sin(X[k,0]+X[k,2]) + B[1, :]@U[k] * \
+            np.arctan(X[k,0]+X[k,1]) + qx * D[k,1]
+        x[2] = .4*np.exp(-X[k,1]) + B[2, :]@U[k] * \
+            np.sin(-X[k,0]/2.) + qx * D[k,2]
     return Y, X
 
 qy = 0.01  # output noise std
 qx = 0.01  # process noise std
 U_train = np.random.rand(N_train, nu)-0.5
+D_train = np.random.randn(N_train, nx+ny)
 x0_train = np.zeros(nx)
-Y_train, _ = truesystem(x0_train, U_train, qx, qy)
+Y_train, _ = truesystem(x0_train, U_train, D_train, qx, qy)
 
 Ys_train, ymean, ygain = standard_scale(Y_train)
 Us_train, umean, ugain = standard_scale(U_train)
 
 U_test = np.random.rand(N_test, nu)-0.5
+D_test = np.random.randn(N_train, nx+ny)
 x0_test = np.zeros(nx)
-Y_test, _ = truesystem(x0_test, U_test, qx, qy)
+Y_test, _ = truesystem(x0_test, U_test, D_test, qx, qy)
 Ys_test = (Y_test-ymean)*ygain  # use same scaling as for training data
 Us_test = (U_test-umean)*ugain
 
@@ -138,26 +140,27 @@ if plotfigs:
     plt.title('scheduling vector')
 
 # Repeat with group-Lasso regularization to possibly reduce the number of scheduling variables
-model = qLPVModel(nx, ny, nu, npar, qlpv_fcn, qlpv_params_init,
+model_group = qLPVModel(nx, ny, nu, npar, qlpv_fcn, qlpv_params_init,
                 feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None)
-model.loss(rho_th=rho_th, tau_th=0., tau_g=0.1, zero_coeff=1.e-4)
-model.group_lasso_p()
-model.optimization(adam_epochs=adam_epochs,
+model_group.loss(rho_th=rho_th, tau_th=0., tau_g=0.07, zero_coeff=1.e-4)
+model_group.group_lasso_p()
+model_group.optimization(adam_epochs=adam_epochs,
                 lbfgs_epochs=lbfgs_epochs, memory=memory, iprint=iprint)
-model.fit(Ys_train, Us_train, LTI_training=True)
-Alin, Blin, Clin, Dlin, Ap, Bp, Cp, Dp = model.ssdata()
+model_group.fit(Ys_train, Us_train, LTI_training=True)
+Alin, Blin, Clin, Dlin, Ap, Bp, Cp, Dp = model_group.ssdata()
 # parameters defining the scheduling function
-qlpv_params = model.params[:model.nqlpv_params]
+qlpv_params = model_group.params[:model.nqlpv_params]
 
 print(f"Ap = {Ap}\n\nBp = {Bp}\n\nCp = {Cp}\n\nDp = {Dp}")
-removable_parameters = model.sparsity["removable_parameters"]
+removable_parameters = model_group.sparsity["removable_parameters"]
+kept_parameters = np.delete(np.arange(npar),removable_parameters)
 
 # Compute BFR scores
-Yshat_train, X_train = model.predict(model.x0, Us_train)
+Yshat_train, X_train = model_group.predict(model.x0, Us_train)
 Yhat_train = unscale(Yshat_train, ymean, ygain)
-x0_test = model.learn_x0(
+x0_test = model_group.learn_x0(
     Us_test, Ys_test, LBFGS_refinement=True, LBFGS_rho_x0=rho_x0, verbosity=0)
-Yshat_test, X_test = model.predict(x0_test, Us_test)
+Yshat_test, X_test = model_group.predict(x0_test, Us_test)
 Yhat_test = unscale(Yshat_test, ymean, ygain)
 
 BFR_train2, BFR_test2, msg2 = compute_scores(
@@ -176,7 +179,7 @@ if plotfigs:
                     for x, u in zip(X_test, Us_test)])
 
     plt.figure(figsize=(8, 4))
-    plt.plot(p_test)
+    plt.plot(p_test[:,kept_parameters])
     plt.grid()
     plt.title('scheduling vector')
 
@@ -193,22 +196,22 @@ def qlpv_param_init_fcn(seed):
     b3 = np.zeros(new_npar)
     return [W1x, W1u, b1, W2, b2, W3, b3]
 
-model = qLPVModel(nx, ny, nu, new_npar, qlpv_fcn, qlpv_params_init,
+model_single = qLPVModel(nx, ny, nu, new_npar, qlpv_fcn, qlpv_params_init,
                   feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None)
-model.loss(rho_th=rho_th)
-model.optimization(adam_epochs=adam_epochs,
+model_single.loss(rho_th=rho_th)
+model_single.optimization(adam_epochs=adam_epochs,
                    lbfgs_epochs=lbfgs_epochs, memory=memory, iprint=iprint)
-models = model.parallel_fit(Ys_train, Us_train, qlpv_param_init_fcn=qlpv_param_init_fcn, seeds=range(10), n_jobs=10)
+models_single = model_single.parallel_fit(Ys_train, Us_train, qlpv_param_init_fcn=qlpv_param_init_fcn, seeds=range(10), n_jobs=10)
 # Find model that achieves best fit on test data (this operation could be parallelized too)
 best_R2=-np.inf
 best_id = -1
 msg3 = ''
 id=0
-for model in models:
-    x0_test = model.learn_x0(Us_test, Ys_test)
-    Yshat_train, _ = model.predict(model.x0, Us_train)
+for model_single in models_single:
+    x0_test = model_single.learn_x0(Us_test, Ys_test)
+    Yshat_train, _ = model_single.predict(model.x0, Us_train)
     Yhat_train = unscale(Yshat_train, ymean, ygain)
-    Yshat_test, _ = model.predict(x0_test, Us_test)
+    Yshat_test, _ = model_single.predict(x0_test, Us_test)
     Yhat_test = unscale(Yshat_test, ymean, ygain)
     R2, R2_test, msg_id = compute_scores(
         Y_train, Yhat_train, Y_test, Yhat_test, fit='BFR')
@@ -218,7 +221,7 @@ for model in models:
         best_id = id
         msg3 = msg_id
     id+=1
-best_model = models[best_id]
+best_model = models_single[best_id]
 
 print(f"\nTraining results\n{'-'*30}")
 print(f"#scheduling vars = {npar},               {msg}")

@@ -9,9 +9,24 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
   - [Installation](#installation)
   - [Basic usage](#basic-usage)
     - [Linear state-space models](#linear-state-space-models)
+      - [Training linear models](#training-linear-models)
+      - [L1- and group-Lasso regularization](#l1--and-group-lasso-regularization)
+      - [Multiple experiments](#multiple-experiments)
+      - [Stability](#stability)
+      - [Static gain](#static-gain)
     - [Nonlinear system identification and RNNs](#nonlinear-system-identification-and-rnns)
+      - [Training nonlinear models](#training-nonlinear-models)
+      - [Parallel training](#parallel-training)
+      - [flax.linen models](#flaxlinen-models)
+      - [Custom output loss](#custom-output-loss)
+      - [Custom regularization](#custom-regularization)
+      - [Static gain](#static-gain-1)
+      - [Upper and lower bounds](#upper-and-lower-bounds)
     - [Quasi-Linear Parameter-Varying (qLPV) models](#quasi-linear-parameter-varying-qlpv-models)
-    - [Static models and nonlinear regression/classification](#static-models-and-nonlinear-regressionclassification)
+      - [Training qLPV models](#training-qlpv-models)
+    - [Static models](#static-models)
+      - [Nonlinear regression](#nonlinear-regression)
+      - [Classification](#classification)
   - [Contributors](#contributors)
   - [Acknowledgments](#acknowledgments)
   - [Citing jax-sysid](#citing-jax-sysid)
@@ -43,7 +58,7 @@ pip install jax-sysid
 
 <a name="linear"></a>
 ### Linear state-space models
-
+#### Training linear models
 Given input/output training data $(u_0,y_0)$, $\ldots$, $(u_{N-1},y_{N-1})$, $u_k\in R^{n_u}$, $y_k\in R^{n_y}$, we want to identify a state-space model in the following form
 
 $$        x_{k+1}=Ax_k+Bu_k$$
@@ -120,6 +135,7 @@ Yshat, Xhat = model.predict(model.x0, Us)
 Yhat = unscale(Yshat, ymean, ygain)
 ~~~
 
+#### L1- and group-Lasso regularization
 Let us now retrain the model using L1-regularization
 and check the sparsity of the resulting model:
 
@@ -147,6 +163,7 @@ model.fit(Ys, Us)
 ~~~
 Groups in this case are entries in $B,D$ related to the same input.
 
+#### Multiple experiments
 **jax-sysid** also supports multiple training experiments. In this case, the sequences of training inputs and outputs are passed as a list of arrays. For example, if three experiments are available for training, use the following command:
 
 ~~~python
@@ -155,6 +172,7 @@ model.fit([Ys1, Ys2, Ys3], [Us1, Us2, Us3])
 
 In case the initial state $x_0$ is trainable, one initial state per experiment is optimized. To avoid training the initial state, add `train_x0=False` when calling `model.loss`.
 
+#### Stability
 To attempt forcing that the identified linear model is asymptotically stable, i.e., that matrix $A$ has all eigenvalues inside the unit disk, you can use the following command:
 
 ~~~python
@@ -163,8 +181,24 @@ model.force_stability()
 
 before calling the `fit` function. This will introduce a custom regularization penalty that tries to enforce the constraint $\|A\|_2<1$.
 
+#### Static gain
+To introduce a penalty that attempts forcing the identified linear model to have a given DC-gain matrix `M`, you can use the following commands:
+
+~~~python
+dcgain_loss = model.dcgain_loss(DCgain = M)
+model.loss(rho_x0=1.e-3, rho_th=1.e-2, custom_regularization = dcgain_loss)
+~~~
+
+before calling the `fit` function. Similarly, to fit instead the DC-gain of the model to steady-state input data `Uss` and corresponding output data `Yss`, you can use 
+
+~~~python
+dcgain_loss = model.dcgain_loss(Uss = Uss, Yss = Yss)
+~~~
+and use `dcgain_loss` as the custom regularization function.
+
 <a name="nonlinear"></a>
 ### Nonlinear system identification and RNNs
+#### Training nonlinear models
 Given input/output training data $(u_0,y_0)$, $\ldots$, $(u_{N-1},y_{N-1})$, $u_k\in R^{n_u}$, $y_k\in R^{n_y}$, we want to identify a nonlinear parametric state-space model in the following form
 
 $$        x_{k+1}=f(x_k,u_k,\theta)$$
@@ -232,6 +266,7 @@ Yshat, Xshat = model.predict(model.x0, Us)
 Yhat = unscale(Yshat, ymean, ygain)
 ~~~
 
+#### Parallel training
 As the training problem, in general, is a nonconvex optimization problem, the obtained model often depends on the initial value of the parameters. The **jax-sysid** library supports training models in parallel (including static models) using the `joblib` library. In the example above, we can train 10 different models using 10 jobs in `joblib` as follows:
 
 ~~~
@@ -254,8 +289,8 @@ def init_fcn(seed):
 models = model.parallel_fit(Ys, Us, init_fcn=init_fcn, seeds=range(10), n_jobs=10)
 ~~~
 
+#### flax.linen models
 **jax-sysid** also supports recurrent neural networks defined via the **flax.linen** library (the `flax` package can be installed via `pip install flax`):
-
 
 ~~~python
 from jax_sysid.models import RNN
@@ -287,6 +322,7 @@ model.fit(Ys, Us)
 ~~~
 where the extra parameter `x_scaling` is used to scale down (when $0\leq$ `x_scaling` $<1$) the default initialization of the network weights instantiated by **flax**.
 
+#### Custom output loss
 **jax-sysid** also supports custom loss functions penalizing the deviations of $\hat y$ from $y$. For example, to identify a system with a binary output, we can use the (modified) cross-entropy loss
 
 $$
@@ -312,6 +348,7 @@ $$
 	\|y_k-\hat y_k\|_2^2
 $$
 
+#### Custom regularization
 **jax-sysid** also supports custom regularization terms $r_c(z)$, where $z=(\theta,x_0)$. You can specify such a custom regularization function when defining the overall loss. For example, say for some reason you want to impose $\|\theta\|_2^2\leq 1$ as a soft constraint, you can penalize
 
 $$\frac{1}{2} \rho_{\theta} \|\theta\|_2^2 + \rho_{x_0} \|x_0\|_2^2 + \rho_c\max\{\|\theta\|_2^2-1,0\}^2$$
@@ -325,6 +362,17 @@ def custom_reg_fcn(th,x0):
 model.loss(rho_x0=0.01, rho_th=0.001, custom_regularization= custom_reg_fcn)
 ~~~
 
+#### Static gain
+As for linear systems, a special case of custom regularization function to fit the DC-gain of the model to steady-state input data `Uss` and corresponding output data `Yss`  is obtained using the following commands:
+
+~~~python
+dcgain_loss = model.dcgain_loss(Uss = Uss, Yss = Yss)
+model.loss(rho_x0=1.e-3, rho_th=1.e-2, custom_regularization = dcgain_loss)
+~~~
+
+before calling the `fit` function. Note that this penalty involves solving a system of nonlinear equations for every input/output steady-state pair to evaluate the loss function, so it can be slow if many steady-state data pairs are given.
+
+#### Upper and lower bounds
 To include lower and upper bounds on the parameters of the model and/or the initial state, use the following additional arguments when specifying the optimization problem:
 
 ~~~python
@@ -335,6 +383,7 @@ where `lb` and `ub` are lists of arrays with the same structure as `model.params
 
 <a name="quasiLPV"></a>
 ### Quasi-Linear Parameter-Varying (qLPV) models
+#### Training qLPV models
 As a special case of nonlinear dynamical models, **jax-sysid** supports the identification of quasi-LPV models of the form
 
 $$x_{k+1} = A(p_k)x_k + B(p_k)u_k$$
@@ -397,7 +446,8 @@ models = model.parallel_fit(Y, U, qlpv_param_init_fcn=qlpv_param_init_fcn, seeds
 
 
 <a name="static"></a>
-### Static models and nonlinear regression/classification
+### Static models
+#### Nonlinear regression
 The same optimization algorithms used to train dynamical models can be used to train static models, i.e., to solve the nonlinear regression problem:
 
 $$  \min_{z}r(z)+\frac{1}{N}\sum_{k=0}^{N-1} \|y_{k}-f(u_k,\theta)\|_2^2$$
@@ -456,6 +506,7 @@ model.optimization(lbfgs_epochs=500, params_min=lb, params_max=ub)
 
 where `lb` and `ub` are lists of arrays with the same structure as `model.params`. See `example_static_convex.py` for examples of how to use nonnegative constraints to fit input-convex neural networks.
 
+#### Classification
 To solve classification problems, you need to define a custom loss function to change the default Mean-Squared-Error loss. For example, to train a classifier for a multi-category classification problem with $K$ classes, you can specify a neural network with a linear output layer generating output predictions $\hat y\in R^K$ and define the associated cross-entropy $\ell(\hat y,y) = -\sum_{k=1}^Ky_k\log\left(\frac{e^{\hat y_k}}{\sum_{j=1}^Ke^{\hat y_j}}\right)$ function as follows: 
 
 ~~~python

@@ -1274,6 +1274,64 @@ class Model(object):
         txt += "\n" + line
         return txt
 
+    def dcgain_loss(self, Uss, Yss, beta=1.):
+        """
+        Define a loss function for fitting the DC gain of the model to given steady-state input-output pairs.
+        
+        Parameters:
+        -----------
+        Uss : array-like
+            Steady-state input values.
+        Yss : array-like
+            Steady-state output values.
+        beta : float, optional
+            Penalty on the DC gain loss 
+            
+        Returns:
+        --------
+        dcgain_loss : function
+            A function that computes the DC gain loss given model parameters. This function can be used a custom regularization loss in the fit method.
+            
+        Notes:
+        ------
+        The DC gain loss is computed by comparing the predicted steady-state outputs of the model 
+        with the actual steady-state outputs provided. The steady-state is determined by solving 
+        the steady-state equations for the system, either using a Broyden solver for 
+        nonlinear systems or a direct solution for linear systems.
+        """
+
+        @jax.jit
+        def ss_residual(x, other):
+            u, params = other
+            xnext = self.state_fcn(x, jnp.array(u).reshape(self.nu), params).reshape(-1,1)
+            return (xnext-x.reshape(-1,1)).ravel()
+           
+        @jax.jit
+        def steady_state(uss, params):
+            # Solve steady-state equations to get xss such that xss = f(xss,uss)
+            if not self.isLinear:                
+                xss = jnp.zeros(self.nx) # initial guess
+                broyden  = jaxopt.Broyden(fun=ss_residual, tol=1.e-6)
+                xss = broyden.run(other=[uss, params], init_params=xss).params
+            else:
+                A = params[0]
+                B = params[1]
+                xss = jnp.linalg.solve(jnp.eye(self.nx)-A,B@uss)
+            yss = self.output_fcn(xss,uss,params)
+            return yss
+
+        # Loss function: single sample
+        @jax.jit
+        def dcgain_loss_k(uss, yss, params):
+            yss_hat  = steady_state(uss, params)
+            return jnp.sum((yss-yss_hat)**2)
+
+        # Loss function for unit-dc-gain: multiple samples
+        dcgain_loss_vmap = jax.jit(jax.vmap(dcgain_loss_k, in_axes=(0,0,None)))
+        def dcgain_loss(params, x0):
+            return beta*jnp.sum(dcgain_loss_vmap(Uss,Yss,params))/Yss.shape[0]
+        
+        return dcgain_loss
 
 class LinearModel(Model):
     def __init__(self, nx, ny, nu, feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None, ss=None):
@@ -1476,7 +1534,48 @@ class LinearModel(Model):
             return self
         return Parallel(n_jobs=n_jobs)(delayed(single_fit)(seed) for seed in seeds)
 
+    def dcgain_loss(self, Uss=None, Yss=None, beta=1., DCgain = None):
+        """
+        Define a loss function for fitting the DC gain of a linear model to either a given matrix or to given steady-state input-output pairs.
+        
+        Parameters:
+        -----------
+        Uss : array-like or None
+            Steady-state input values. If None, the DC gain loss must be computed from the desired DC gain matrix DCgain.
+        Yss : array-like or None
+            Steady-state output values.        
+        beta : float, optional
+            Penalty on the DC gain loss
+        DCgain : array-like or None
+            Desired DC gain matrix. If None, the DC gain loss must be computed from the steady-state input-output pairs Uss, Yss.
+            
+        Returns:
+        --------
+        dcgain_loss : function
+            A function that computes the DC gain loss given model parameters. This function can be used a custom regularization loss in the fit method.
+        """
 
+        if DCgain is not None:
+            if DCgain.shape[0] != self.ny or DCgain.shape[1] != self.nu:
+                raise ValueError(
+                    "DCgain matrix has wrong dimensions. Expected %d-by-%d" % (self.ny, self.nu))
+            def dcgain_loss(params,x0):
+                A, B = params[0:2]
+                ssgain = jnp.linalg.solve(jnp.eye(self.nx)-A,B)
+                if self.y_in_x:
+                    dcgain = ssgain[0:self.ny]
+                else:
+                    dcgain = params[2]@ssgain
+                    if self.feedthrough:
+                        dcgain += params[3]
+                return beta*jnp.sum((dcgain-DCgain)**2)
+        else:
+            if Uss is None or Yss is None:
+                raise ValueError(
+                    "Steady-state data Uss and Yss must be provided if DCgain is not given")
+            dcgain_loss = super().dcgain_loss(Uss, Yss, beta)
+        return dcgain_loss
+    
 class qLPVModel(Model):
     def __init__(self, nx, ny, nu, npar, qlpv_fcn, qlpv_params_init, feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None):
         """Create the quasi-LPV (Linear Parameter Varying) state-space model structure

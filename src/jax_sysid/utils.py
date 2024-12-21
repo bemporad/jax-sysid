@@ -56,6 +56,7 @@ def standard_scale(X):
     gain : ndarray
         The gain values used for scaling each feature (=inverse of std, if nonzero, otherwise 1).
     """
+    X = vec_reshape(X)
     xmean = np.mean(X, 0)
     xstd = np.std(X, 0)
     nX = xmean.shape[0]

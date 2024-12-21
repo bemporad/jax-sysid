@@ -71,7 +71,7 @@ for example in ['1d','2d']:
     model.loss(rho_th=1.e-8, tau_th=tau_th)
 
     params_min = [np.zeros((n1,nu)), np.zeros((n2,n1)), np.zeros((n2,nu)), np.zeros((1,n2)),  
-                -np.inf*np.ones((1,nu)), -np.inf*np.ones((n1,1)), -np.inf*np.ones((n2,1)), -np.inf*np.ones((1,1))] # nonnegative weights except last linear term, unconstrained biases
+                -np.inf*np.ones((1,nu)), -np.inf*np.ones((n1,1)), -np.inf*np.ones((n2,1)), -np.inf*np.ones((1,1))] # some weights are nonnegative
     #params_min = None
     params_max = None # no upper bounds
     model.optimization(adam_epochs=1000, lbfgs_epochs=1000, params_min=params_min, params_max=params_max)

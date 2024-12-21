@@ -10,7 +10,7 @@ Nonlinear system identification example using custom residual recurrent neural n
 """
 
 from jax_sysid.utils import standard_scale, unscale, compute_scores
-from jax_sysid.models import Model, LinearModel, StaticModel
+from jax_sysid.models import Model, LinearModel, StaticModel, find_best_model
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -121,26 +121,10 @@ if runRNNModel:
     model.optimization(adam_epochs=0, lbfgs_epochs=2000)
 
     models = model.parallel_fit(
-        Ys_train, Us_train, init_fcn=init_fcn, seeds=range(10), n_jobs=10)
+        Ys_train, Us_train, init_fcn=init_fcn, seeds=range(10))
 
-    # Find model that achieves best fit on test data (this operation could be parallelized too)
-    best_R2 = -np.inf
-    best_id = -1
-    id = 0
-    for model in models:
-        x0_test = model.learn_x0(Us_test, Ys_test)
-        Yshat_train, _ = model.predict(model.x0, Us_train)
-        Yhat_train = unscale(Yshat_train, ymean, ygain)
-        Yshat_test, _ = model.predict(x0_test, Us_test)
-        Yhat_test = unscale(Yshat_test, ymean, ygain)
-        R2, R2_test, msg = compute_scores(
-            Y_train, Yhat_train, Y_test, Yhat_test, fit='R2')
-        print(msg)
-        if float(R2_test) > best_R2:
-            best_R2 = float(R2_test)
-            best_id = id
-        id += 1
-    best_model = models[best_id]
+    # Find model that achieves best fit on test data
+    best_model, best_R2 = find_best_model(models, Ys_test, Us_test, fit='R2')
     print(f"\nBest R2-score achieved on test data = {best_R2}")
 
 if runLinearModel:
@@ -150,26 +134,9 @@ if runLinearModel:
     model.loss(rho_x0=1.e-3, rho_th=1.e-6)
     # number of epochs for Adam and L-BFGS-B optimization
     model.optimization(adam_epochs=0, lbfgs_epochs=1000)
-    models = model.parallel_fit(
-        Ys_train, Us_train, seeds=range(10), n_jobs=10)
+    models = model.parallel_fit(Ys_train, Us_train, seeds=range(10))
     
-    best_R2 = -np.inf
-    best_id = -1
-    id = 0
-    for model in models:
-        x0_test = model.learn_x0(Us_test, Ys_test)
-        Yshat_train, _ = model.predict(model.x0, Us_train)
-        Yhat_train = unscale(Yshat_train, ymean, ygain)
-        Yshat_test, _ = model.predict(x0_test, Us_test)
-        Yhat_test = unscale(Yshat_test, ymean, ygain)
-        R2, R2_test, msg = compute_scores(
-            Y_train, Yhat_train, Y_test, Yhat_test, fit='R2')
-        print(msg)
-        if float(R2_test) > best_R2:
-            best_R2 = float(R2_test)
-            best_id = id
-        id += 1
-    best_model = models[best_id]
+    best_model, best_R2 = find_best_model(models, Ys_test, Us_test, fit='R2')
     print(f"\nBest R2-score achieved on test data = {best_R2}")
 
 if runStaticModel:
@@ -228,8 +195,7 @@ if runStaticModel:
     model.optimization(adam_epochs=0, lbfgs_epochs=500)
 
     seeds = range(10)
-    models = model.parallel_fit(
-        Ys_train, Us_train, init_fcn=init_fcn, seeds=seeds, n_jobs=10)
+    models = model.parallel_fit(Ys_train, Us_train, init_fcn=init_fcn, seeds=seeds)
 
     id = 0
     for model in models:

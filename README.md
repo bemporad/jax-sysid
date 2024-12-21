@@ -289,6 +289,16 @@ def init_fcn(seed):
 models = model.parallel_fit(Ys, Us, init_fcn=init_fcn, seeds=range(10), n_jobs=10)
 ~~~
 
+By default, `n_jobs` is equal to the number of all available CPUs. 
+
+To select the best model on a dataset `Us_test`, `Ys_test` in accordance with a given fit criterion, you can use `find_best_model`:
+
+~~~
+from jax_sysid.models import find_best_model
+
+best_model, best_R2 = find_best_model(models, Ys_test, Us_test, fit='R2')
+~~~
+
 #### flax.linen models
 **jax-sysid** also supports recurrent neural networks defined via the **flax.linen** library (the `flax` package can be installed via `pip install flax`):
 

@@ -13,8 +13,8 @@ import jaxopt
 from functools import partial
 import tqdm
 import sys
-from jax_sysid.utils import lbfgs_options, vec_reshape
-from joblib import Parallel, delayed
+from jax_sysid.utils import lbfgs_options, vec_reshape, compute_scores
+from joblib import Parallel, delayed, cpu_count
 
 epsil_lasso = 1.e-16  # tolerance used in groupLassoReg functions to prevent 0/0 = nan in the Jacobian vector when the argument is the zero vector
 default_small_tau_th = 1.e-8  # add some small L1-regularization.
@@ -284,6 +284,57 @@ def get_bounds(z, epsil_lasso, params_min, params_max):
     return (lb, ub)
 
 
+def find_best_model(models, Y, U, fit='R2', n_jobs=None):
+    """
+    Given a list of models, find the model that achieves the highest fit on a given dataset.
+
+    Parameters
+    ----------
+    models : list
+        List of models to evaluate.
+    Y : np.ndarray
+        Output data.
+    U : np.ndarray
+        Input data.
+    fit : str, optional
+        Metric to use for evaluating the fit (default is 'R2').
+    n_jobs : int, optional
+        Number of parallel jobs to run (default is None, which means using all available cores).
+
+    Returns
+    -------
+    model
+        The model that achieves the highest fit.
+    score
+        The score of the best model.
+    """
+
+    if not isinstance(models, list):
+        raise Exception("\033[1mPlease provide a list of models to compare.\033[0m")
+
+    if len(models) == 1:
+        return models[0]
+    # Recognize type of model (static vs recurrent)
+    isRecurrent = isinstance(models[0], Model)
+
+    def single_score(k):
+        if isRecurrent:
+            x0 = models[k].learn_x0(U, Y)
+            Yhat, _ = models[k].predict(x0, U)
+        else:
+            Yhat = models[k].predict(U)
+        R2, _, _ = compute_scores(Y, Yhat, fit=fit)
+        return R2
+
+    if n_jobs is None:
+        n_jobs = cpu_count()  # Use all available cores by default
+
+    scores = Parallel(n_jobs=n_jobs)(delayed(single_score)(k)
+                                     for k in range(len(models)))
+    best_id = np.argmax(scores)
+    return models[best_id], scores[best_id]
+
+
 class Model(object):
     """
     Base class of dynamical models for system identification
@@ -411,7 +462,7 @@ class Model(object):
         ----------
         output_loss : function
             Loss function penalizing output fit errors, loss=output_loss(Yhat,Y), where Yhat is the sequence of predicted outputs and Y is the measured output.
-            If None, use standard mean squared error loss=sum((Yhat-Y)^2)/Y.shape[0]
+            If None, use standard mean squared error loss=sum((Yhat-Y)**2)/Y.shape[0]
         rho_x0 : float
             L2-regularization on initial state
         rho_th : float
@@ -1007,7 +1058,7 @@ class Model(object):
         self.sparsity = sparsity
         return
 
-    def parallel_fit(self, Y, U, init_fcn, seeds, n_jobs):
+    def parallel_fit(self, Y, U, init_fcn, seeds, n_jobs=None):
         """
         Fits the model in parallel using multiple seeds.
 
@@ -1027,10 +1078,18 @@ class Model(object):
         """
         def single_fit(seed):
             if not jax.config.jax_enable_x64:
-                jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
+                # Enable 64-bit computations
+                jax.config.update("jax_enable_x64", True)
             self.init(params=init_fcn(seed))
+            if self.iprint > -1:
+                print(
+                    "\033[1m" + f"Fitting model with seed = {seed} ... " + "\033[0m")
             self.fit(Y, U)
+            if self.iprint > -1:
+                print("\033[1m" + f"Seed = {seed}: done." + "\033[0m")
             return self
+        if n_jobs is None:
+            n_jobs = cpu_count()  # all available CPUs
         return Parallel(n_jobs=n_jobs)(delayed(single_fit)(seed) for seed in seeds)
 
     def learn_x0(self, U, Y, rho_x0=None, RTS_epochs=1, verbosity=True, LBFGS_refinement=False,
@@ -1277,7 +1336,7 @@ class Model(object):
     def dcgain_loss(self, Uss, Yss, beta=1.):
         """
         Define a loss function for fitting the DC gain of the model to given steady-state input-output pairs.
-        
+
         Parameters:
         -----------
         Uss : array-like
@@ -1286,12 +1345,12 @@ class Model(object):
             Steady-state output values.
         beta : float, optional
             Penalty on the DC gain loss 
-            
+
         Returns:
         --------
         dcgain_loss : function
             A function that computes the DC gain loss given model parameters. This function can be used a custom regularization loss in the fit method.
-            
+
         Notes:
         ------
         The DC gain loss is computed by comparing the predicted steady-state outputs of the model 
@@ -1303,35 +1362,39 @@ class Model(object):
         @jax.jit
         def ss_residual(x, other):
             u, params = other
-            xnext = self.state_fcn(x, jnp.array(u).reshape(self.nu), params).reshape(-1,1)
-            return (xnext-x.reshape(-1,1)).ravel()
-           
+            xnext = self.state_fcn(x, jnp.array(
+                u).reshape(self.nu), params).reshape(-1, 1)
+            return (xnext-x.reshape(-1, 1)).ravel()
+
         @jax.jit
         def steady_state(uss, params):
             # Solve steady-state equations to get xss such that xss = f(xss,uss)
-            if not self.isLinear:                
-                xss = jnp.zeros(self.nx) # initial guess
-                broyden  = jaxopt.Broyden(fun=ss_residual, tol=1.e-6)
+            if not self.isLinear:
+                xss = jnp.zeros(self.nx)  # initial guess
+                broyden = jaxopt.Broyden(fun=ss_residual, tol=1.e-6)
                 xss = broyden.run(other=[uss, params], init_params=xss).params
             else:
                 A = params[0]
                 B = params[1]
-                xss = jnp.linalg.solve(jnp.eye(self.nx)-A,B@uss)
-            yss = self.output_fcn(xss,uss,params)
+                xss = jnp.linalg.solve(jnp.eye(self.nx)-A, B@uss)
+            yss = self.output_fcn(xss, uss, params)
             return yss
 
         # Loss function: single sample
         @jax.jit
         def dcgain_loss_k(uss, yss, params):
-            yss_hat  = steady_state(uss, params)
+            yss_hat = steady_state(uss, params)
             return jnp.sum((yss-yss_hat)**2)
 
         # Loss function for unit-dc-gain: multiple samples
-        dcgain_loss_vmap = jax.jit(jax.vmap(dcgain_loss_k, in_axes=(0,0,None)))
+        dcgain_loss_vmap = jax.jit(
+            jax.vmap(dcgain_loss_k, in_axes=(0, 0, None)))
+
         def dcgain_loss(params, x0):
-            return beta*jnp.sum(dcgain_loss_vmap(Uss,Yss,params))/Yss.shape[0]
-        
+            return beta*jnp.sum(dcgain_loss_vmap(Uss, Yss, params))/Yss.shape[0]
+
         return dcgain_loss
+
 
 class LinearModel(Model):
     def __init__(self, nx, ny, nu, feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None, ss=None):
@@ -1509,7 +1572,7 @@ class LinearModel(Model):
         self.custom_regularization = force_stability
         return
 
-    def parallel_fit(self, Y, U, seeds, n_jobs):
+    def parallel_fit(self, Y, U, seeds, n_jobs=None):
         """
         Fits the model in parallel using multiple seeds.
 
@@ -1528,16 +1591,26 @@ class LinearModel(Model):
         """
         def single_fit(seed):
             if not jax.config.jax_enable_x64:
-                jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
+                # Enable 64-bit computations
+                jax.config.update("jax_enable_x64", True)
             self.init(sigma=self.sigma, seed=seed)
+            if self.iprint > -1:
+                print(
+                    "\033[1m" + f"Fitting model with seed = {seed} ... " + "\033[0m")
             self.fit(Y, U)
+            if self.iprint > -1:
+                print("\033[1m" + f"Seed = {seed}: done." + "\033[0m")
             return self
+
+        if n_jobs is None:
+            n_jobs = cpu_count()
+
         return Parallel(n_jobs=n_jobs)(delayed(single_fit)(seed) for seed in seeds)
 
-    def dcgain_loss(self, Uss=None, Yss=None, beta=1., DCgain = None):
+    def dcgain_loss(self, Uss=None, Yss=None, beta=1., DCgain=None):
         """
         Define a loss function for fitting the DC gain of a linear model to either a given matrix or to given steady-state input-output pairs.
-        
+
         Parameters:
         -----------
         Uss : array-like or None
@@ -1548,7 +1621,7 @@ class LinearModel(Model):
             Penalty on the DC gain loss
         DCgain : array-like or None
             Desired DC gain matrix. If None, the DC gain loss must be computed from the steady-state input-output pairs Uss, Yss.
-            
+
         Returns:
         --------
         dcgain_loss : function
@@ -1559,9 +1632,10 @@ class LinearModel(Model):
             if DCgain.shape[0] != self.ny or DCgain.shape[1] != self.nu:
                 raise ValueError(
                     "DCgain matrix has wrong dimensions. Expected %d-by-%d" % (self.ny, self.nu))
-            def dcgain_loss(params,x0):
+
+            def dcgain_loss(params, x0):
                 A, B = params[0:2]
-                ssgain = jnp.linalg.solve(jnp.eye(self.nx)-A,B)
+                ssgain = jnp.linalg.solve(jnp.eye(self.nx)-A, B)
                 if self.y_in_x:
                     dcgain = ssgain[0:self.ny]
                 else:
@@ -1575,7 +1649,8 @@ class LinearModel(Model):
                     "Steady-state data Uss and Yss must be provided if DCgain is not given")
             dcgain_loss = super().dcgain_loss(Uss, Yss, beta)
         return dcgain_loss
-    
+
+
 class qLPVModel(Model):
     def __init__(self, nx, ny, nu, npar, qlpv_fcn, qlpv_params_init, feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None):
         """Create the quasi-LPV (Linear Parameter Varying) state-space model structure
@@ -1861,10 +1936,16 @@ class qLPVModel(Model):
         """
         def single_fit(seed):
             if not jax.config.jax_enable_x64:
-                jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
+                # Enable 64-bit computations
+                jax.config.update("jax_enable_x64", True)
             qlpv_params_init = qlpv_param_init_fcn(seed)
             self.init(qlpv_params_init, self.sigma, seed, x0=None)
+            if self.iprint > -1:
+                print(
+                    "\033[1m" + f"Fitting model with seed = {seed} ... " + "\033[0m")
             self.fit(Y, U, LTI_training=LTI_training)
+            if self.iprint > -1:
+                print("\033[1m" + f"Seed = {seed}: done." + "\033[0m")
             return self
         models = Parallel(n_jobs=n_jobs)(
             delayed(single_fit)(seed=seed) for seed in seeds)
@@ -2013,7 +2094,7 @@ class StaticModel(object):
         ----------
         output_loss : function
             Loss function penalizing output fit errors, loss=output_loss(Yhat,Y), where Yhat is the sequence of predicted outputs and Y is the measured output.
-            If None, use standard mean squared error loss=sum((Yhat-Y)^2)/Y.shape[0]
+            If None, use standard mean squared error loss=sum((Yhat-Y)**2)/Y.shape[0]
         rho_th : float
             L2-regularization on model parameters
         tau_th : float
@@ -2344,9 +2425,15 @@ class StaticModel(object):
         """
         def single_fit(seed):
             if not jax.config.jax_enable_x64:
-                jax.config.update("jax_enable_x64", True)  # Enable 64-bit computations
+                # Enable 64-bit computations
+                jax.config.update("jax_enable_x64", True)
             self.init(params=init_fcn(seed))
+            if self.iprint > -1:
+                print(
+                    "\033[1m" + f"Fitting model with seed = {seed} ... " + "\033[0m")
             self.fit(Y, U)
+            if self.iprint > -1:
+                print("\033[1m" + f"Seed = {seed}: done." + "\033[0m")
             return self
         return Parallel(n_jobs=n_jobs)(delayed(single_fit)(seed) for seed in seeds)
 

@@ -4,20 +4,33 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jax-sysid"
-version = "0.6.7"
+version = "0.6.9"
 authors = [
-  { name="Alberto Bemporad", email="alberto.bemporad@imtlucca.it" },
+    { name = "Alberto Bemporad", email = "alberto.bemporad@imtlucca.it" }
 ]
-description = "jax-sysid - A Python package for linear and nonlinear system identification and nonlinear regression using Jax."
+description = "A Python package for linear and nonlinear system identification and nonlinear regression using Jax."
 readme = "README.md"
 requires-python = ">=3.9"
-dependencies = ["numpy","scipy","jax","jaxopt","tqdm","matplotlib","pmlb","joblib"]
+dependencies = [
+    "numpy",
+    "scipy",
+    "jax",
+    "jaxopt",
+    "tqdm",
+    "matplotlib",
+    "pmlb",
+    "joblib"
+]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: Apache Software License",
-    "Operating System :: OS Independent",
+    "Operating System :: OS Independent"
 ]
-keywords = ["system identification", "subspace identification", "nonlinear regression"]
+keywords = [
+    "system identification",
+    "subspace identification",
+    "nonlinear regression"
+]
 
 [project.urls]
-"Homepage" = "http://cse.lab.imtlucca.it/~bemporad/jax-sysid"
+homepage = "https://github.com/bemporad/jax-sysid"

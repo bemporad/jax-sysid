@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jax-sysid"
-version = "0.6.9"
+version = "1.0.0"
 authors = [
     { name = "Alberto Bemporad", email = "alberto.bemporad@imtlucca.it" }
 ]
@@ -19,7 +19,8 @@ dependencies = [
     "tqdm",
     "matplotlib",
     "pmlb",
-    "joblib"
+    "joblib",
+    "diffrax"
 ]
 classifiers = [
     "Programming Language :: Python :: 3",

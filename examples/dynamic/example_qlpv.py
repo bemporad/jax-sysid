@@ -5,7 +5,7 @@ Quasi-LPV identification example.
 """
 
 from jax_sysid.utils import unscale, compute_scores, standard_scale
-from jax_sysid.models import qLPVModel
+from jax_sysid.models import qLPVModel, find_best_model
 import numpy as np
 import jax
 import flax.linen as nn
@@ -201,27 +201,17 @@ model_single = qLPVModel(nx, ny, nu, new_npar, qlpv_fcn, qlpv_params_init,
 model_single.loss(rho_th=rho_th)
 model_single.optimization(adam_epochs=adam_epochs,
                    lbfgs_epochs=lbfgs_epochs, memory=memory, iprint=iprint)
-models_single = model_single.parallel_fit(Ys_train, Us_train, qlpv_param_init_fcn=qlpv_param_init_fcn, seeds=range(10), n_jobs=10)
-# Find model that achieves best fit on test data (this operation could be parallelized too)
-best_R2=-np.inf
-best_id = -1
-msg3 = ''
-id=0
-for model_single in models_single:
-    x0_test = model_single.learn_x0(Us_test, Ys_test)
-    Yshat_train, _ = model_single.predict(model.x0, Us_train)
-    Yhat_train = unscale(Yshat_train, ymean, ygain)
-    Yshat_test, _ = model_single.predict(x0_test, Us_test)
-    Yhat_test = unscale(Yshat_test, ymean, ygain)
-    R2, R2_test, msg_id = compute_scores(
+models_single = model_single.parallel_fit(Ys_train, Us_train, qlpv_param_init_fcn=qlpv_param_init_fcn, seeds=range(10))
+
+# Find model that achieves best fit on test data
+model_single, best_R2 = find_best_model(models_single, Ys_test, Us_test, fit='R2')
+x0_test = model_single.learn_x0(Us_test, Ys_test)
+Yshat_train, _ = model_single.predict(model_single.x0, Us_train)
+Yhat_train = unscale(Yshat_train, ymean, ygain)
+Yshat_test, _ = model_single.predict(x0_test, Us_test)
+Yhat_test = unscale(Yshat_test, ymean, ygain)
+R2, R2_test, msg3 = compute_scores(
         Y_train, Yhat_train, Y_test, Yhat_test, fit='BFR')
-    print(msg_id)
-    if float(R2_test)>best_R2:
-        best_R2 = float(R2_test)
-        best_id = id
-        msg3 = msg_id
-    id+=1
-best_model = models_single[best_id]
 
 print(f"\nTraining results\n{'-'*30}")
 print(f"#scheduling vars = {npar},               {msg}")

@@ -24,6 +24,8 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
       - [Upper and lower bounds](#upper-and-lower-bounds)
     - [Quasi-Linear Parameter-Varying (qLPV) models](#quasi-linear-parameter-varying-qlpv-models)
       - [Training qLPV models](#training-qlpv-models)
+    - [Continuous-time models](#continuous-time-models)
+      - [Training continuous-time models](#training-continuous-time-models)
     - [Static models](#static-models)
       - [Nonlinear regression](#nonlinear-regression)
       - [Classification](#classification)
@@ -454,6 +456,70 @@ you can train the model for 10 different random seeds on 10 jobs by running:
 models = model.parallel_fit(Y, U, qlpv_param_init_fcn=qlpv_param_init_fcn, seeds=range(10), n_jobs=10)
 ~~~
 
+<a name="continuous-time"></a>
+### Continuous-time models
+#### Training continuous-time models
+**jax-sysid** supports the identification of general parametric nonlinear continuous-time models
+
+$$\frac{dx(t)}{dt} = f_x(x(t),u(t),t,\theta)$$
+$$y_k = f_y(x(t),u(t),t,\theta)$$
+
+by using the package `diffrax` (Kidger, 2021) for the integration of ordinary differential equations.
+
+The default loss function is
+$$\frac{1}{t_{end}-t_{init}}\int_{t_{init}}^{t_{end}}(\hat y(t)-y(t))^2 dt$$
+where $t_{init}$ and $t_{end}$ are the initial and final time over which the training dataset is defined.
+
+Linear time-invariant continuous-time models are a special case in which 
+$$f_x(x(t),u(t),t,\theta)=Ax(t)+Bu(t)$$
+$$f_y(x(t),u(t),t,\theta)=Cx(t)+Du(t)$$
+with $\theta=(A,B,C,D)$.
+
+You can train a continuous time model with `nx` states, `ny` outputs, and `nu` inputs as follows:
+
+~~~
+from jax_sysid import CTModel
+model = CTModel(nx, ny, nu, state_fcn=state_fcn, output_fcn=output_fcn)
+~~~
+
+where `state_fcn(x, u, t, params)` defines the state update $\frac{dx(t)}{dt}$ and
+`output_fcn(x, u, t, params)` the output $y(t)$.
+
+Then, run
+
+~~~
+model.init(params) # initial values of the parameters
+model.fit(Y, U, T)
+~~~
+
+By default, the integration method `diffrax.Heun()` is employed, with an integration step equal to (`T[1]-T[0]`)/10
+and the input signal `U` is modeled in continuous-time by assuming that a zero-order hold (ZOH) keeps the
+samples `U[k]` constant over each time interval in `T`.
+
+To change integration options, such as to use a different integration solver like `diffrax.Euler()`, `diffrax.Dopri5()`, etc., you must call
+
+~~~
+model.integration_options(ode_solver=diffrax.Dopri5())
+~~~
+
+After training, predictions can be obtained by running
+
+~~~
+Y, X = model.predict(model.x0, U, T)
+~~~
+
+You can reconstruct an initial state on test data by running
+
+~~~
+x0_test = model.learn_x0(U_test, Y_test, T_test)
+~~~
+
+To specify that the input signal is sampled at different time instants, you must use an extra input argument to specify the array of time instants at which the input is sampled:
+
+~~~
+model.fit(Y, U, T, Tu)
+x0_test = model.learn_x0(U_test, Y_test, T_test, Tu_test)
+~~~
 
 <a name="static"></a>
 ### Static models

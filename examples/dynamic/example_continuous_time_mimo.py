@@ -10,7 +10,7 @@ Nonlinear system identification example in continuous time using a multi-input m
 """
 
 from jax_sysid.utils import standard_scale, compute_scores
-from models import CTModel, LinearModel
+from jax_sysid.models import CTModel, LinearModel
 import jax
 import jax.numpy as jnp
 import numpy as np

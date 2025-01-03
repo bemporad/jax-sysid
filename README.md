@@ -55,6 +55,8 @@ http://arxiv.org/abs/2403.03827</a>, 2024. [[bib entry](#ref1)]
 pip install jax-sysid
 ~~~
 
+**Note**: currently, `jax_sysid` forces installing `jax==0.4.31`. This is due to the considerable slower performance of later versions of `jax` in training recurrent models. If you need to use later versions of `jax`, you must set the environment variable `XLA_FLAGS=--xla_cpu_use_thunk_runtime=false` to recover a similar performance.
+
 <a name="basic-usage"></a>
 ## Basic usage
 

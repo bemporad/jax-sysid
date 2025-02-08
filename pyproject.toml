@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jax-sysid"
-version = "1.0.2"
+version = "1.0.3"
 authors = [
     { name = "Alberto Bemporad", email = "alberto.bemporad@imtlucca.it" }
 ]
 description = "A Python package for linear and nonlinear system identification and nonlinear regression using Jax."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.9<=3.12" # As of 2024-01-03, requiring jax <= 0.4.31 is not compatible with Python 3.13
 dependencies = [
     "numpy",
     "scipy",

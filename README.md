@@ -22,8 +22,8 @@ A Python package based on <a href="https://jax.readthedocs.io"> JAX </a> for lin
       - [Custom regularization](#custom-regularization)
       - [Static gain](#static-gain-1)
       - [Upper and lower bounds](#upper-and-lower-bounds)
-    - [Quasi-Linear Parameter-Varying (qLPV) models](#quasi-linear-parameter-varying-qlpv-models)
-      - [Training qLPV models](#training-qlpv-models)
+    - [Linear Parameter-Varying (LPV) models](#linear-parameter-varying-lpv-models)
+      - [Training LPV models](#training-lpv-models)
     - [Continuous-time models](#continuous-time-models)
       - [Training continuous-time models](#training-continuous-time-models)
     - [Static models](#static-models)
@@ -396,15 +396,15 @@ model.optimization(params_min=lb, params_max=ub, x0_min=xmin, x0_max=xmax, ...)
 where `lb` and `ub` are lists of arrays with the same structure as `model.params`, while `xmin` and `xmax` are arrays of the same dimension `model.nx` of the state vector. By default, each value is set equal to `None`, i.e., the corresponding constraint is not enforced. See `example_linear_positive.py` for examples of how to use nonnegative constraints to fit a positive linear system.
 
 <a name="quasiLPV"></a>
-### Quasi-Linear Parameter-Varying (qLPV) models
-#### Training qLPV models
+### Linear Parameter-Varying (LPV) models
+#### Training LPV models
 As a special case of nonlinear dynamical models, **jax-sysid** supports the identification of quasi-LPV models of the form
 
 $$x_{k+1} = A(p_k)x_k + B(p_k)u_k$$
 
 $$y_k = C(p_k) x_k+D(p_k)u_k$$
 
-where the scheduling vector $p_k$ is an arbitrary parametric nonlinear function (to be trained) of $x_k$ and $u_k$ 
+(a.k.a. *self-scheduled* LPV models) where the scheduling vector $p_k$ is an arbitrary parametric nonlinear function (to be trained) of $x_k$ and $u_k$ 
 with $n_p$ entries 
 
 $$p_k = f(x_k,u_k,\theta_p)$$
@@ -457,6 +457,11 @@ you can train the model for 10 different random seeds on 10 jobs by running:
 ~~~python
 models = model.parallel_fit(Y, U, qlpv_param_init_fcn=qlpv_param_init_fcn, seeds=range(10), n_jobs=10)
 ~~~
+
+*Externally scheduled* LPV models, in which $p_k$ is an exogenous signal, 
+can be modeled by simply extending the input signal to also include $p_k$
+and defining `qlpv_fcn` as $f(x,[u\ p],\theta_p)=p$. In this case, $\theta_p$ is empty,
+as there is no parameter to tune in the scheduling parameter function.
 
 <a name="continuous-time"></a>
 ### Continuous-time models
@@ -613,12 +618,12 @@ We thank Roland Toth for suggesting the use of Kung's method for initializing li
 <a name="ref1"></a>
 
 ```
-@article{Bem24,
+@article{Bem25,
     author={A. Bemporad},
-    title={Linear and nonlinear system identification under $\ell_1$- and group-{Lasso} regularization via {L-BFGS-B}},
-    note = {submitted for publication. Also available on arXiv
-    at \url{http://arxiv.org/abs/2403.03827}},
-    year=2024
+    title={An {L-BFGS-B} approach for linear and nonlinear system identification under $\ell_1$ and group-Lasso regularization},
+    journal = {IEEE Transactions on Automatic Control},
+    note = {in press. Also available on arXiv at \url{http://arxiv.org/abs/2403.03827}},
+    year=2025
 }
 ```
 

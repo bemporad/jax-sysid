@@ -8,7 +8,7 @@ Nonlinear system identification example, using recurrent neural network based on
 from flax import linen as nn
 import matplotlib.pyplot as plt
 from jax_sysid.utils import standard_scale, unscale, compute_scores
-from jax_sysid.models import RNN
+from jax_sysid.models import RNN, find_best_model
 import jax
 import numpy as np
 
@@ -94,10 +94,16 @@ model = RNN(nx, ny, nu, FX=FX, FY=FY, x_scaling=0.1)
 model.loss(rho_x0=1.e-4, rho_th=0., tau_th=4.e-4)
 # number of epochs for Adam and L-BFGS-B optimization
 model.optimization(adam_epochs=0, lbfgs_epochs=2000)
-model.fit(Ys_train, Us_train)
-t0 = model.t_solve
 
-print(f"Elapsed time: {t0} s")
+train_single_model=True
+if train_single_model:
+    model.fit(Ys_train, Us_train)
+    t0 = model.t_solve
+    print(f"Elapsed time: {t0} s")
+else:
+    models=model.parallel_fit(Ys_train, Us_train, init_fcn=model.init_fcn, seeds=range(10))
+    model, best_R2 = find_best_model(models, Ys_test, Us_test, fit='R2')
+
 Yshat_train, _ = model.predict(model.x0, Us_train)
 Yhat_train = unscale(Yshat_train, ymean, ygain)
 

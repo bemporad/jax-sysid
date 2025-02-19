@@ -2022,9 +2022,9 @@ class RNN(Model):
 
         key1, key2 = jax.random.split(jax.random.PRNGKey(seed), 2)
 
-        fx = FX()
+        self.fx = FX()
         # initialize parameters by passing a template vector
-        thx = fx.init(key1, jnp.ones(nx+nu))['params']
+        thx = self.fx.init(key1, jnp.ones(nx+nu))['params']
         thx_flat, thx_tree = jax.tree_util.tree_flatten(thx)
         params = thx_flat
         self.nthx = len(thx_flat)
@@ -2034,12 +2034,12 @@ class RNN(Model):
         def state_fcn(x, u, params):
             thx = jax.tree_util.tree_unflatten(
                 self.thx_tree, params[0:self.nthx])
-            x = fx.apply({'params': thx}, jnp.hstack((x, u)))  # time update
+            x = self.fx.apply({'params': thx}, jnp.hstack((x, u)))  # time update
             return x
 
         if not y_in_x:
-            fy = FY()
-            thy = fy.init(key2, jnp.ones(nx+nu))['params']
+            self.fy = FY()
+            thy = self.fy.init(key2, jnp.ones(nx+nu))['params']
             thy_flat, thy_tree = jax.tree_util.tree_flatten(thy)
             params.extend(thy_flat)
             self.thy_tree = thy_tree
@@ -2048,7 +2048,7 @@ class RNN(Model):
             def output_fcn(x, u, params):
                 thy = jax.tree_util.tree_unflatten(
                     self.thy_tree, params[self.nthx:])
-                y = fy.apply({'params': thy}, jnp.hstack(
+                y = self.fy.apply({'params': thy}, jnp.hstack(
                     (x, u)))  # predicted output
                 return y
         else:
@@ -2076,6 +2076,32 @@ class RNN(Model):
         self.isLinear = False
         self.isInitialized = True
         return
+    
+    def init_fcn(self,seed):
+        """Initialize the model parameters given a seed.
+
+        Parameters
+        ----------
+        seed : int
+            Random seed for initializing the parameters.
+
+        Returns
+        -------
+        params : list
+            The initial guess for the model parameters.
+        """
+        key1, key2 = jax.random.split(jax.random.PRNGKey(seed), 2)
+        thx = self.fx.init(key1, jnp.ones(self.nx+self.nu))['params']
+        thx_flat, _ = jax.tree_util.tree_flatten(thx)
+        params = thx_flat
+
+        if not self.y_in_x:
+            thy = self.fy.init(key2, jnp.ones(self.nx+self.nu))['params']
+            thy_flat, _ = jax.tree_util.tree_flatten(thy)
+            params.extend(thy_flat)
+
+        return params
+        
 
 
 class CTModel(Model):
@@ -2947,8 +2973,8 @@ class FNN(StaticModel):
         key = jax.random.PRNGKey(seed)
 
         # initialize parameters by passing a template vector
-        fy = FY()
-        thy = fy.init(key, jnp.ones(nu))['params']
+        self.fy = FY()
+        thy = self.fy.init(key, jnp.ones(nu))['params']
         thy_flat, thy_tree = jax.tree_util.tree_flatten(thy)
         params = thy_flat
         self.thy_tree = thy_tree
@@ -2956,7 +2982,7 @@ class FNN(StaticModel):
         @jax.jit
         def output_fcn(u, params):
             thy = jax.tree_util.tree_unflatten(self.thy_tree, params)
-            y = fy.apply({'params': thy}, u)  # predicted output
+            y = self.fy.apply({'params': thy}, u)  # predicted output
             return y
 
         super().__init__(ny, nu, output_fcn=output_fcn)
@@ -2964,3 +2990,21 @@ class FNN(StaticModel):
         self.params = params
         self.isInitialized = True
         return
+
+    def init_fcn(self, seed):
+        """Initialize the model parameters given a seed.
+
+        Parameters
+        ----------
+        seed : int
+            Random seed for initializing the parameters.
+
+        Returns
+        -------
+        params : list
+            The initial guess for the model parameters.
+        """
+        key = jax.random.PRNGKey(seed)
+        thy = self.fy.init(key, jnp.ones(self.nu))['params']
+        thy_flat, _ = jax.tree_util.tree_flatten(thy)
+        return thy_flat

@@ -308,7 +308,7 @@ def find_best_model(models, Y, U, fit='R2', n_jobs=None, verbose=True):
     Returns
     -------
     model
-        The model that achieves the highest fit.
+        The model that achieves the highest fit (or highest average fit, in case of multiple targets).
     score
         The score of the best model.
     """
@@ -346,7 +346,8 @@ def find_best_model(models, Y, U, fit='R2', n_jobs=None, verbose=True):
 
     scores = Parallel(n_jobs=n_jobs)(delayed(single_score)(k)
                                      for k in range(len(models)))
-    best_id = np.argmax(scores)
+
+    best_id = np.argmax(np.sum(np.array(scores).reshape(len(models),-1),axis=1)) # get best score (best average score in case of multiple outputs)
 
     if verbose:
         print("Scores:")
@@ -354,7 +355,7 @@ def find_best_model(models, Y, U, fit='R2', n_jobs=None, verbose=True):
             print(f"Model {k}: {fit} = {scores[k]}")
         print(f"Best model: {best_id}, score: {scores[best_id]}")
 
-    return models[best_id], scores[best_id]
+    return models[best_id], np.array(scores[best_id])
 
 
 class Model(object):

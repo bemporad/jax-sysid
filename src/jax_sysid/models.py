@@ -298,8 +298,12 @@ def find_best_model(models, Y, U, fit='R2', n_jobs=None, verbose=True):
         Output data.
     U : np.ndarray
         Input data.
-    fit : str, optional
-        Metric to use for evaluating the fit (default is 'R2').
+    fit : str or function, optional
+        Metric to use for evaluating the fit. Default is 'R2', for other supported metrics 
+        (such as 'BFR', or 'RMSE', or 'Accuracy') see function utils/compute_scores().        
+        Alternatively, fit is a function fit(Y,Yhat) that takes two arguments: Y (=output data) 
+        and Yhat (=outputs predicted by each model) and returns a scalar fit value. The larger the
+        value, the better the fit.
     n_jobs : int, optional
         Number of parallel jobs to run (default is None, which means using all available cores).
     verbose : bool
@@ -325,6 +329,15 @@ def find_best_model(models, Y, U, fit='R2', n_jobs=None, verbose=True):
         raise Exception(
             "\033[1mUse model.find_best_model(models,Y, U, fit, n_jobs, T, Tu, interpolation_type, ode_solver, dt0, max_steps, stepsize_controller\033[0m")
 
+    if isinstance(fit, str):
+        def get_score(Y,Yhat):
+            score, _, _ = compute_scores(Y, Yhat, fit=fit)
+            if fit.lower() == 'rmse':
+                score = -score  # minimize RMSE
+            return score
+    else:
+        get_score = fit
+        
     def single_score(k):
         if isinstance(models[0], Model):
             x0 = models[k].learn_x0(U, Y)
@@ -335,8 +348,8 @@ def find_best_model(models, Y, U, fit='R2', n_jobs=None, verbose=True):
         else:
             raise Exception(
                 "\033[1mUnknown model type\033[0m")
-        R2, _, _ = compute_scores(Y, Yhat, fit=fit)
-        return R2
+        score = get_score(Y, Yhat)
+        return score
 
     if n_jobs is None:
         n_jobs = cpu_count()  # Use all available cores by default
@@ -349,10 +362,17 @@ def find_best_model(models, Y, U, fit='R2', n_jobs=None, verbose=True):
 
     best_id = np.argmax(np.sum(np.array(scores).reshape(len(models),-1),axis=1)) # get best score (best average score in case of multiple outputs)
 
+    if isinstance(fit, str):
+        fit_name = fit
+        if fit.lower() == 'rmse':
+            scores = [-s for s in scores]
+    else:
+        fit_name = fit.__name__   
+
     if verbose:
         print("Scores:")
         for k in range(len(models)):
-            print(f"Model {k}: {fit} = {scores[k]}")
+            print(f"Model {k}: {fit_name} = {scores[k]}")
         print(f"Best model: {best_id}, score: {scores[best_id]}")
 
     return models[best_id], np.array(scores[best_id])
@@ -2494,8 +2514,12 @@ class CTModel(Model):
             Time points corresponding to the output data.
         Tu: ndarray
             Time points corresponding to the input data. If None, Tu=T.
-        fit : str, optional
-            Metric to use for evaluating the fit (default is 'R2').
+        fit : str or function, optional
+            Metric to use for evaluating the fit. Default is 'R2', for other supported metrics 
+            (such as 'BFR', or 'RMSE', or 'Accuracy') see function utils/compute_scores().        
+            Alternatively, fit is a function fit(Y,Yhat) that takes two arguments: Y (=output data) 
+            and Yhat (=outputs predicted by each model) and returns a scalar fit value. The larger the
+            value, the better the fit.
         n_jobs : int, optional
             Number of parallel jobs to run (default is None, which means using all available cores).
         verbose : bool
@@ -2516,12 +2540,20 @@ class CTModel(Model):
         if Tu is None:
             Tu = T
 
+        if isinstance(fit, str):
+            def get_score(Y,Yhat):
+                score, _, _ = compute_scores(Y, Yhat, fit=fit)
+                if fit.lower() == 'rmse':
+                    score = -score  # minimize RMSE
+                return np.sum(score)/Y.shape[0] # average score over all outputs
+        else:
+            get_score = fit
+
         def single_score(k):
             x0 = models[k].learn_x0(U, Y, T, Tu)
             Yhat, _ = models[k].predict(x0, U, T, Tu)
-            R2, _, _ = compute_scores(Y, Yhat, fit=fit)
-            R2 = np.sum(R2)/models[k].ny # average R2 score, in case of multiple outputs
-            return R2
+            score = get_score(Y, Yhat)
+            return score
 
         if n_jobs is None:
             n_jobs = cpu_count()  # Use all available cores by default
@@ -2530,14 +2562,22 @@ class CTModel(Model):
             print("Evaluating models...\n")
 
         scores = Parallel(n_jobs=n_jobs)(delayed(single_score)(k)
-                                         for k in range(len(models)))
-        best_id = np.argmax(scores)
+                                         for k in range(len(models)))            
+
+        best_id = np.argmax(np.sum(np.array(scores).reshape(len(models),-1),axis=1)) # get best score (best average score in case of multiple outputs)
         self.params = models[best_id].params
+        
+        if isinstance(fit, str):
+            fit_name = fit
+            if fit.lower() == 'rmse':
+                scores = [-s for s in scores]
+        else:
+            fit_name = fit.__name__   
 
         if verbose:
             print("Scores:")
             for k in range(len(models)):
-                print(f"Model {k}: {fit} = {scores[k]}")
+                print(f"Model {k}: {fit_name} = {scores[k]}")
             print(f"Best model: {best_id}, score: {scores[best_id]}")
         return scores[best_id]
 

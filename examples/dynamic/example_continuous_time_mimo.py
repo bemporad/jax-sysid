@@ -103,7 +103,7 @@ model.loss(rho_x0=1.e-4, rho_th=1.e-4, train_x0=True) # default loss: integral o
 model.optimization(adam_epochs=1000, lbfgs_epochs=3000)
 
 # Fit model to training data
-single_fit = False
+single_fit = True
 if single_fit:
     model.fit(Ys_train, Us_train, T_train)
 else:

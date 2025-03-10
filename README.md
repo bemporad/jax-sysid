@@ -610,6 +610,9 @@ This software is distributed without any warranty. Please cite the paper below i
 
 <a name="acknowledgments"></a>
 ## Acknowledgments
+
+This project has received partial support from the European Research Council (ERC), Advanced Research Grant "COMPACT" (Grant Agreement No. 101141351).
+
 We thank Roland Toth for suggesting the use of Kung's method for initializing linear state-space models and Kui Xie for feedback on the reconstruction of the initial state via EKF + RTS smoothing. 
 
 <a name="bibliography"></a>

@@ -263,11 +263,11 @@ if runNLmodel:
         ax[0].plot(T_train[0:99], Y_train[0:99, 0], label='measured')
         ax[0].plot(T_train[0:99], Yhat_train[0:99, 0], label='jax-sysid')
         ax[0].legend()
-        ax[0].set_title('R2-score (training data)')
+        ax[0].set_title('Training data')
         ax[1].plot(T_test[0:99], Y_test[0:99, 0], label='measured')
         ax[1].plot(T_test[0:99], Yhat_test[0:99, 0], label='jax-sysid')
         ax[1].legend()
-        ax[1].set_title('R2-score (test data)')
+        ax[1].set_title('Test data')
         plt.show()
 
     # Simulate model for each steady-state input value and get average of last L samples

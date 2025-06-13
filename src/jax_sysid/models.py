@@ -321,9 +321,6 @@ def find_best_model(models, Y, U, fit='R2', n_jobs=None, verbose=True):
         raise Exception(
             "\033[1mPlease provide a list of models to compare.\033[0m")
 
-    if len(models) == 1:
-        return models[0]
-
     # Recognize type of model
     if isinstance(models[0], CTModel):
         raise Exception(
@@ -350,6 +347,9 @@ def find_best_model(models, Y, U, fit='R2', n_jobs=None, verbose=True):
                 "\033[1mUnknown model type\033[0m")
         score = get_score(Y, Yhat)
         return score
+
+    if len(models) == 1:
+        return models[0], single_score(0)  # if only one model, return it and its score directly
 
     if n_jobs is None:
         n_jobs = cpu_count()  # Use all available cores by default
@@ -523,8 +523,8 @@ class Model(object):
         train_x0 : bool
             If True, also train the initial state x0, otherwise set x0=0 and ignore rho_x0.
         custom_regularization : function
-            Custom regularization term, a function of the model parameters and initial state
-            custom_regularization(params, x0).            
+            Additional custom regularization term, a function of the model parameters and initial state
+            custom_regularization(params, x0).
         """
         if output_loss is None:
             def output_loss(Yhat, Y): return jnp.sum((Yhat-Y)**2)/Y.shape[0]
@@ -2252,7 +2252,7 @@ class CTModel(Model):
         train_x0 : bool
             If True, also train the initial state x0, otherwise set x0=0 and ignore rho_x0.
         custom_regularization : function
-            Custom regularization term, a function of the model parameters and initial state
+            Additional custom regularization term, a function of the model parameters and initial state
             custom_regularization(params, x0).            
         """
         if output_loss is None:
@@ -2554,6 +2554,10 @@ class CTModel(Model):
             Yhat, _ = models[k].predict(x0, U, T, Tu)
             score = get_score(Y, Yhat)
             return score
+        
+        if len(models) == 1:
+            self.params = models[0].params
+            return single_score(0)  # if only one model, return its score directly
 
         if n_jobs is None:
             n_jobs = cpu_count()  # Use all available cores by default
@@ -2649,8 +2653,8 @@ class StaticModel(object):
         zero_coeff : _type_
             Entries smaller than zero_coeff are set to zero. Useful when tau_th>0 or tau_g>0.
         custom_regularization : function
-            Custom regularization term, a function of the model parameters 
-            custom_regularization(params, x0).            
+            Additional custom regularization term, a function of the model parameters 
+            custom_regularization(params).            
         """
         if output_loss is None:
             def output_loss(Yhat, Y): return jnp.sum((Yhat - Y)**2)/Y.shape[0]

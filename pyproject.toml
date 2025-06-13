@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jax-sysid"
-version = "1.0.7"
+version = "1.0.8"
 authors = [
     { name = "Alberto Bemporad", email = "alberto.bemporad@imtlucca.it" }
 ]
@@ -13,9 +13,10 @@ readme = "README.md"
 requires-python = ">=3.9,<3.13" # As of 2024-01-03, requiring jax <= 0.4.31 is not compatible with Python 3.13
 dependencies = [
     "numpy",
-    "scipy",
+    "scipy<=1.14.1", # As of version 1.15.0, the iprint option in scipy.optimize (L-BFGS-B) is deprecated
     "jax<=0.4.31", # As of 2024-01-03, jax > 0.4.31 has a much slower jax.lax.scan
     "jaxopt",
+    "flax<=0.10.4",
     "tqdm",
     "matplotlib",
     "joblib",

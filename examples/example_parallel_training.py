@@ -10,15 +10,18 @@ Nonlinear system identification example using custom residual recurrent neural n
 """
 
 from jax_sysid.utils import standard_scale, unscale, compute_scores
-from jax_sysid.models import Model, LinearModel, StaticModel, find_best_model
+from jax_sysid.models import Model, LinearModel, StaticModel, RNN, find_best_model
 import jax
 import jax.numpy as jnp
 import numpy as np
+from joblib import cpu_count
+from flax import linen as nn
 from pmlb import fetch_data
 
-runRNNModel = True
-runLinearModel = False
-runStaticModel = True
+runNonlinearModel = True # Train custom recurrent NN model
+runRNNModel = False # Train RNN model using Flax
+runLinearModel = False # Train linear model
+runStaticModel = True # Train static model
 
 jax.config.update('jax_platform_name', 'cpu')
 if not jax.config.jax_enable_x64:
@@ -27,7 +30,7 @@ if not jax.config.jax_enable_x64:
 seed = 3  # for reproducibility of results
 np.random.seed(seed)
 
-if runRNNModel or runLinearModel:
+if runNonlinearModel or runRNNModel or runLinearModel:
     nx = 3  # number of states
     ny = 1  # number of outputs
     nu = 1  # number of inputs
@@ -74,7 +77,7 @@ if runRNNModel or runLinearModel:
     Ys_test = (Y_test-ymean)*ygain  # use same scaling as for training data
     Us_test = (U_test-umean)*ugain
 
-if runRNNModel:
+if runNonlinearModel:
     # Perform system identification
     def sigmoid(x):
         return 1. / (1. + jnp.exp(-x))
@@ -121,7 +124,41 @@ if runRNNModel:
     model.optimization(adam_epochs=0, lbfgs_epochs=2000)
 
     models = model.parallel_fit(
-        Ys_train, Us_train, init_fcn=init_fcn, seeds=range(10))
+        Ys_train, Us_train, init_fcn=init_fcn, seeds=range(cpu_count()))
+
+    # Find model that achieves best fit on test data
+    best_model, best_R2 = find_best_model(models, Ys_test, Us_test, fit='R2')
+    print(f"\nBest R2-score achieved on test data = {best_R2}")
+
+if runRNNModel:
+    # state-update function
+    class FX(nn.Module):
+        @nn.compact
+        def __call__(self, x):
+            x1 = nn.Dense(features=5)(x)
+            x1 = nn.sigmoid(x1)
+            x1 = nn.Dense(features=nx)(x1)
+            x1 += nn.Dense(features=nx)(x) # linear bypass
+            return x1
+
+    # output function
+    class FY(nn.Module):
+        @nn.compact
+        def __call__(self, x):
+            y = nn.Dense(features=5)(x)
+            y = nn.sigmoid(y)
+            y = nn.Dense(features=ny)(y)
+            y += nn.Dense(features=ny)(x[:nx]) # linear bypass
+            return y
+
+    model = RNN(nx, ny, nu, FX=FX, FY=FY, x_scaling=0.1)
+
+    # L2-regularization on initial state and model coefficients
+    model.loss(rho_x0=1.e-4, rho_th=1.e-4)
+    # number of epochs for Adam and L-BFGS-B optimization
+    model.optimization(adam_epochs=1000, lbfgs_epochs=2000)
+
+    models=model.parallel_fit(Ys_train, Us_train, init_fcn=model.init_fcn, seeds=range(cpu_count()))
 
     # Find model that achieves best fit on test data
     best_model, best_R2 = find_best_model(models, Ys_test, Us_test, fit='R2')
@@ -134,7 +171,7 @@ if runLinearModel:
     model.loss(rho_x0=1.e-3, rho_th=1.e-6)
     # number of epochs for Adam and L-BFGS-B optimization
     model.optimization(adam_epochs=0, lbfgs_epochs=1000)
-    models = model.parallel_fit(Ys_train, Us_train, seeds=range(10))
+    models = model.parallel_fit(Ys_train, Us_train, seeds=range(cpu_count()))
     
     best_model, best_R2 = find_best_model(models, Ys_test, Us_test, fit='R2')
     print(f"\nBest R2-score achieved on test data = {best_R2}")
@@ -177,14 +214,14 @@ if runStaticModel:
 
 
     model = StaticModel(ny, nu, output_fcn)
-    nn = 10  # number of neurons
+    n1 = 10  # number of neurons
 
 
     def init_fcn(seed):
         np.random.seed(seed)
-        W1 = np.random.randn(nn, nu)
-        b1 = np.random.randn(nn, 1)
-        W2 = np.random.randn(1, nn)
+        W1 = np.random.randn(n1, nu)
+        b1 = np.random.randn(n1, 1)
+        W2 = np.random.randn(1, n1)
         b2 = np.random.randn(1, 1)
         return [W1, b1, W2, b2]
 
@@ -194,7 +231,7 @@ if runStaticModel:
     # number of epochs for Adam and L-BFGS-B optimization
     model.optimization(adam_epochs=0, lbfgs_epochs=500)
 
-    seeds = range(10)
+    seeds = range(cpu_count())
     models = model.parallel_fit(Ys_train, Us_train, init_fcn=init_fcn, seeds=seeds)
 
     id = 0
@@ -208,4 +245,4 @@ if runStaticModel:
         print(f"seed = {seeds[id]}: {msg}")
         id += 1
 
-    print("Parallel training done.")
+print("Parallel training done.")

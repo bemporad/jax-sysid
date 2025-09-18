@@ -1980,6 +1980,8 @@ class qLPVModel(Model):
                 Function to initialize the parameters of the scheduling function qlpv_params given a seed.
             seeds (array-like): The seeds used for initialization.
             n_jobs (int): The number of parallel jobs to run (default is None, which means using all available cores).
+            LTI_training : bool
+            If True, the LTI matrices Alin, Blin, Clin, Dlin are trained first and used as an initial guess.
 
         Returns:
             list: A list of fitted models.

@@ -101,7 +101,7 @@ def qlpv_fcn(x, u, qlpv_params):
 # Define qLPV model
 model = qLPVModel(nx, ny, nu, npar, qlpv_fcn, qlpv_params_init,
                 feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None)
-model.loss(rho_th=rho_th)
+model.loss(rho_th=rho_th, rho_x0=rho_x0)
 model.optimization(adam_epochs=adam_epochs,
                 lbfgs_epochs=lbfgs_epochs, memory=memory, iprint=iprint)
 model.fit(Ys_train, Us_train, LTI_training=True)
@@ -142,7 +142,7 @@ if plotfigs:
 # Repeat with group-Lasso regularization to possibly reduce the number of scheduling variables
 model_group = qLPVModel(nx, ny, nu, npar, qlpv_fcn, qlpv_params_init,
                 feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None)
-model_group.loss(rho_th=rho_th, tau_th=0., tau_g=0.07, zero_coeff=1.e-4)
+model_group.loss(rho_th=rho_th, rho_x0=rho_x0, tau_th=0., tau_g=0.07, zero_coeff=1.e-4)
 model_group.group_lasso_p()
 model_group.optimization(adam_epochs=adam_epochs,
                 lbfgs_epochs=lbfgs_epochs, memory=memory, iprint=iprint)
@@ -198,7 +198,7 @@ def qlpv_param_init_fcn(seed):
 
 model_single = qLPVModel(nx, ny, nu, new_npar, qlpv_fcn, qlpv_params_init,
                   feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None)
-model_single.loss(rho_th=rho_th)
+model_single.loss(rho_th=rho_th, rho_x0=rho_x0)
 model_single.optimization(adam_epochs=adam_epochs,
                    lbfgs_epochs=lbfgs_epochs, memory=memory, iprint=iprint)
 models_single = model_single.parallel_fit(Ys_train, Us_train, qlpv_param_init_fcn=qlpv_param_init_fcn, seeds=range(10))

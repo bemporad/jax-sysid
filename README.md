@@ -177,13 +177,19 @@ model.fit([Ys1, Ys2, Ys3], [Us1, Us2, Us3])
 In case the initial state $x_0$ is trainable, one initial state per experiment is optimized. To avoid training the initial state, add `train_x0=False` when calling `model.loss`.
 
 #### Stability
-To attempt forcing that the identified linear model is asymptotically stable, i.e., that matrix $A$ has all eigenvalues inside the unit disk, you can use the following command:
+To attempt forcing that the identified linear model is stable, i.e., that matrix $A$ has all eigenvalues inside the unit disk, there are two methods. The first method uses $A$/max($\|A\|_2$,1) as the state-transition matrix and is simply used by setting the flag `stability` at construction:
+
+~~~python
+model = LinearModel(nx, ny, nu, stability=True)
+~~~
+
+The second method requires using the following command:
 
 ~~~python
 model.force_stability()
 ~~~
 
-before calling the `fit` function. This will introduce a custom regularization penalty that tries to enforce the constraint $\|A\|_2<1$.
+before calling the `fit` function, which introduces instead a custom regularization penalty designed to enforce the constraint $\|A\|_2\leq1$.
 
 #### Static gain
 To introduce a penalty that attempts forcing the identified linear model to have a given DC-gain matrix `M`, you can use the following commands:

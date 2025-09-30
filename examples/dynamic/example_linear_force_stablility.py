@@ -4,6 +4,7 @@ jax-sysid: A Python package for linear and nonlinear system identification and n
 Linear system identification example with stability enforcement.
 
 (C) 2024 A. Bemporad, June 11, 2024
+    Revised by A. Bemporad, September 27-30, 2025
 """
 
 import matplotlib.pyplot as plt
@@ -51,10 +52,11 @@ U_test = np.random.rand(N_test, nu)-0.5
 x0_test = np.random.randn(nx)
 Y_test, X_test = truemodel.predict(x0_test, U_test, qx, qy)
 
-model = LinearModel(nx, ny, nu, feedthrough=False, sigma=0.5)  # create linear model
+model = LinearModel(nx, ny, nu, feedthrough=False, sigma=0.5, stability=True)  # create linear model with stability enforcement
 
-# Try enforcing stability of the identified linear model
-model.force_stability(rho_A=1.e3, epsilon_A=1.e-3)
+# # Alternative: enforce stability of the identified linear model via penalty function
+# model = LinearModel(nx, ny, nu, feedthrough=False, sigma=0.5)  # create linear model with 
+# model.force_stability(rho_A=1.e3, epsilon_A=1.e-3)
     
 model.loss(rho_x0=1.e-3, rho_th=1.e-2)
 

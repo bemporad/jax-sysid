@@ -16,6 +16,7 @@ import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 import diffrax
+from joblib import cpu_count
 
 jax.config.update('jax_platform_name', 'cpu')
 if not jax.config.jax_enable_x64:
@@ -103,12 +104,12 @@ model.loss(rho_x0=1.e-4, rho_th=1.e-4, train_x0=True) # default loss: integral o
 model.optimization(adam_epochs=1000, lbfgs_epochs=3000)
 
 # Fit model to training data
-single_fit = True
+single_fit = False
 if single_fit:
     model.fit(Ys_train, Us_train, T_train)
 else:
     # Train from different initializations:
-    models = model.parallel_fit(Ys_train, Us_train, T_train, init_fcn=init_fcn, seeds=range(10))
+    models = model.parallel_fit(Ys_train, Us_train, T_train, init_fcn=init_fcn, seeds=range(cpu_count()))
     R2 = model.find_best_model(models, Ys_train, Us_train, T_train)
 
 x0_train=model.learn_x0(Us_train, Ys_train, T_train)

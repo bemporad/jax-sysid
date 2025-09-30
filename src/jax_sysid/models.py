@@ -1415,7 +1415,7 @@ class Model(object):
             # Solve steady-state equations to get xss such that xss = f(xss,uss)
             if not self.isLinear:
                 xss = jnp.zeros(self.nx)  # initial guess
-                broyden = jaxopt.Broyden(fun=ss_residual, tol=1.e-6)
+                broyden = jaxopt.Broyden(fun=ss_residual, tol=1.e-6, stepsize=1.0) # linesearch is ignored when stepsize > 0
                 xss = broyden.run(other=[uss, params], init_params=xss).params
             else:
                 A = params[0]
@@ -1441,7 +1441,7 @@ class Model(object):
 
 
 class LinearModel(Model):
-    def __init__(self, nx, ny, nu, feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None, ss=None):
+    def __init__(self, nx, ny, nu, feedthrough=False, y_in_x=False, x0=None, sigma=0.5, seed=0, Ts=None, ss=None, stability=False):
         """Create the linear state-space model structure
 
             x(k+1) = A*x(k) + B*u(k)
@@ -1471,6 +1471,8 @@ class LinearModel(Model):
             Initial value of A, B, C, D matrices for state-space realization (optional)
             If y_in_x=True, provided values for C and D are ignored.
             If y_in_x=False and feedthrough=False, provided value for D is ignored.
+        stability: bool
+            If True, set the state-transition matrix to A/max(abs(eig(A)),1) to guarantee system stability.
         """
 
         super().__init__(nx, ny, nu, state_fcn=None, output_fcn=None, y_in_x=y_in_x, Ts=Ts)
@@ -1490,43 +1492,55 @@ class LinearModel(Model):
         self.init(params=params, x0=x0, sigma=sigma, seed=seed)
         self.sigma = sigma  # required by parallel_fit()
 
-        if self.y_in_x:
+        self.isStable = stability # If True, A matrix is trained as A/max(|eig(A)|,1) to enforce stability
+        if not self.isStable:
             @jax.jit
             def state_fcn(x, u, params):
-                A, B = params
+                A, B = params[0:2]
                 return A @ x + B @ u
-
+            @jax.jit
+            def stabilize(A):
+                return A            
+        else:
+            # @jax.jit
+            # def stabilize(A):
+            #     eigA = jnp.linalg.eigvals(A)
+            #     maxeig = jnp.max(jnp.abs(eigA)) # This could be made more efficient by computing only the dominant eigenvalue
+            #     return A / jnp.maximum(maxeig, 1.0)
+            @jax.jit
+            def stabilize(A):
+                return A / jnp.maximum(jnp.linalg.norm(A,2),1.) # More efficient method using matrix 2-norm
+            @jax.jit
+            def state_fcn(x, u, params):
+                A, B = params[0:2]
+                A = self.stabilize_fcn(A)
+                return A @ x + B @ u
+        self.stabilize_fcn = stabilize
+        
+        if self.y_in_x:
             @jax.jit
             def output_fcn(x, u, params):
                 return x[0:self.ny]
         else:
             if not feedthrough:
-                @jax.jit
-                def state_fcn(x, u, params):
-                    A, B, _ = params
-                    return A @ x + B @ u
-
-                @jax.jit
                 def output_fcn(x, u, params):
-                    _, _, C = params
+                    C = params[2]
                     return C @ x
             else:
                 @jax.jit
-                def state_fcn(x, u, params):
-                    A, B, _, _ = params
-                    return A @ x + B @ u
-
-                @jax.jit
                 def output_fcn(x, u, params):
-                    _, _, C, D = params
+                    C, D = params[2:4]
                     return C @ x + D @ u
 
         self.state_fcn = state_fcn
         self.output_fcn = output_fcn
+
         return
 
     def params2ABCD(self):
         A, B = self.params[0:2]
+        if self.isStable:
+            A = self.stabilize_fcn(A)
         if self.y_in_x:
             C = np.hstack(
                 (np.eye(self.ny), np.zeros((self.ny, self.nx-self.ny))))
@@ -1567,8 +1581,9 @@ class LinearModel(Model):
         def groupLassoRegX(th, x0):
             cost = 0.
             A, B = th[0:2]
+            if self.isStable:
+                A = self.stabilize_fcn(A)
             if self.y_in_x:
-                A, B = th[0:2]
                 for i in range(self.nx):
                     cost += jnp.sqrt(jnp.sum(A[:, i]**2)+jnp.sum(A[i, :]**2) -
                                      A[i, i]**2+jnp.sum(B[i, :]**2) + sum([x0i[i]**2 for x0i in x0]))
@@ -1601,7 +1616,9 @@ class LinearModel(Model):
         return
 
     def force_stability(self, rho_A=1.e3, epsilon_A=1.e-3):
-        """Force stability of the linear state-space model by imposing the soft constraint ||A||_2 <= 1. The constraint is mapped into the following custom regularization term in the optimization problem:
+        """Force stability of the linear state-space model by imposing the soft constraint ||A||_2 <= 1 as the state-transition matrix. 
+        
+        The constraint ||A||_2 <= 1 is mapped into the following custom regularization term in the optimization problem:
 
         rho_A * max{||A||_2^2 − 1 + epsilon_A, 0}^2
 
@@ -1614,13 +1631,21 @@ class LinearModel(Model):
         epsilon_A : float
             Tolerance for the constraint ||A||_2 <= 1
         """
+
+        if self.isStable:
+            print("\033[1mWarning: the model was already forced to be stable. Changing stability enforcement method.\033[0m")
+            @jax.jit
+            def stabilize(A):
+                return A            
+            self.stabilize_fcn = stabilize
+            self.isStable = False # Disable existing stability enforcement, now relies on penalty function
+
         @jax.jit
         def force_stability(th, x0):
             A = th[0]
             return rho_A*jnp.maximum(jnp.linalg.norm(A, 2)**2-1.+epsilon_A, 0.)**2
 
         self.custom_regularization = force_stability
-        return
 
     def parallel_fit(self, Y, U, seeds, n_jobs=None):
         """
@@ -1685,6 +1710,7 @@ class LinearModel(Model):
 
             def dcgain_loss(params, x0):
                 A, B = params[0:2]
+                A = self.stabilize_fcn(A)
                 ssgain = jnp.linalg.solve(jnp.eye(self.nx)-A, B)
                 if self.y_in_x:
                     dcgain = ssgain[0:self.ny]

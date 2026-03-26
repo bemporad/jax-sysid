@@ -12,6 +12,9 @@ import jax
 import matplotlib.pyplot as plt
 from jax_sysid.models import Model
 from jax_sysid.utils import compute_scores
+import time
+
+t_start = time.time()
 
 plotfigs = True  # set to True to plot figures
 
@@ -35,7 +38,7 @@ u = np.random.rand()
 x=np.zeros((nx,1))
 for i in range(N):
     U[i] = u
-    Y[i] = float(C @ (x+x**3/3)  -4. + qy*np.random.randn()>=0)
+    Y[i] = (C @ (x+x**3/3)  -4. + qy*np.random.randn()>=0.)+0.
     x = A @ x*(0.9+0.1*np.sin(x)) + B * u*(1-u**3) + qx*np.random.randn(nx,1)
     if np.random.rand() > 0.9:
         u = np.random.rand()
@@ -102,6 +105,8 @@ Yhat_test = (Yhat_test>=0.5).astype(float)
 # Compute accuracy scores
 acc_train, acc_test, msg = compute_scores(Y_train, Yhat_train, Y_test, Yhat_test, fit='Accuracy')
 print(msg)
+
+print(f"Total elapsed time: {time.time()-t_start} s")
 
 if plotfigs:
     T_train = np.arange(N_train)*Ts

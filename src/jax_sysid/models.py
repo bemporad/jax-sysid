@@ -855,11 +855,11 @@ class Model(object):
                 lb = None
                 ub = None
                 if self.isbounded:
-                    lb = self.params_min
-                    ub = self.params_max
+                    lb = list(self.params_min)
+                    ub = list(self.params_max)
                     if self.train_x0:
-                        lb.append(self.x0_min)
-                        ub.append(self.x0_max)
+                        lb.extend(self.x0_min)
+                        ub.extend(self.x0_max)
 
                 z, Jopt = adam_solver(
                     JdJ, z, solver_iters, self.adam_eta, self.iprint, lb, ub)
@@ -877,8 +877,8 @@ class Model(object):
                     bounds = get_bounds(
                         z[0:nth], epsil_lasso, self.params_min, self.params_max)
                     if self.train_x0:
-                        bounds[0].append(self.x0_min)
-                        bounds[1].append(self.x0_max)
+                        bounds[0].extend(self.x0_min)
+                        bounds[1].extend(self.x0_max)
 
                 if not isGroupLasso:
                     if not isL1reg:
@@ -905,11 +905,11 @@ class Model(object):
                                 fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
                             z, state = solver.run(z)
                         else:
-                            lb = self.params_min
-                            ub = self.params_max
+                            lb = list(self.params_min)
+                            ub = list(self.params_max)
                             if self.train_x0:
-                                lb.append(self.x0_min)
-                                ub.append(self.x0_max)
+                                lb.extend(self.x0_min)
+                                ub.extend(self.x0_max)
                             solver = jaxopt.ScipyBoundedMinimize(
                                 fun=J, tol=self.lbfgs_tol, method="L-BFGS-B", maxiter=solver_iters, options=options)
                             z, state = solver.run(z, bounds=(lb, ub))

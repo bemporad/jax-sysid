@@ -13,7 +13,6 @@ Linear system identification example in continuous time
 from jax_sysid.utils import standard_scale, compute_scores
 from jax_sysid.models import CTModel
 import jax
-import jax.numpy as jnp
 import numpy as np
 import matplotlib.pyplot as plt
 import diffrax

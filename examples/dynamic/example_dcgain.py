@@ -273,10 +273,9 @@ if runNLmodel:
     # Simulate model for each steady-state input value and get average of last L samples
     print("Generating steady-states on test inputs:")
     Yss_test = np.empty((N_test_ss,ny))
-    for k in tqdm(range(N_test_ss)):
+    for k in tqdm(range(N_test_ss), bar_format='{l_bar}{bar}| {n_fmt}/{total_fmt}', ncols=40):
         y,_ = model.predict(np.zeros(nx),Uss[N_train_ss+k]*np.ones((M,1)))
         Yss_test[k,:] = y[-1]
-        print(".", end="")
     print("done.")
 
     if plotfigs:

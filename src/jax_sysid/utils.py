@@ -4,7 +4,7 @@ jax-sysid: A Python package for linear and nonlinear system identification and n
 
 Utility functions.
 
-(C) 2024 A. Bemporad, March 6, 2024
+(C) 2024-2026 A. Bemporad
 """
 
 import numpy as np

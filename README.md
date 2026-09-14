@@ -55,7 +55,8 @@ http://arxiv.org/abs/2403.03827</a>, 2024. [[bib entry](#ref1)]
 pip install jax-sysid
 ~~~
 
-**Note**: currently, `jax_sysid` forces installing `jax<=0.4.31`. This is due to the considerable slower performance of  versions of `jax` between `0.4.33` and `0.5.3` in training recurrent models. For these versions of `jax`, similar performance can be recovered by setting the environment variable `XLA_FLAGS=--xla_cpu_use_thunk_runtime=false`. 
+**Note**: currently, `jax_sysid` forces installing `jax<=0.4.31`. This is due to the considerable slower performance of later versions of `jax` in training recurrent models. For newer versions of `jax`, see fixes 
+[below](#jax-fix).
 
 <a name="basic-usage"></a>
 ## Basic usage
@@ -635,6 +636,19 @@ We thank Roland Toth for suggesting the use of Kung's method for initializing li
     year=2025
 }
 ```
+
+<a name="jax-fix"></a>
+Currently, `jax_sysid` forces installing `jax<=0.4.31`. This is due to the considerable slower performance of  versions of `jax` between `0.4.33` and `0.5.3` in training recurrent models. For these versions of `jax`, similar performance can be recovered by setting the environment variable `XLA_FLAGS=--xla_cpu_use_thunk_runtime=false`. 
+
+For later versions of `jax` (e.g., `0.10.2`), the following environment variable recover similar performance: `XLA_FLAGS="--xla_backend_extra_options=xla_cpu_small_while_loop_byte_threshold=16384"` (see [here](https://github.com/jax-ml/jax/issues/40150)). To do this programatically, before importing `jax_sysid` (or `jax`, more in general), insert:
+~~~python
+import os
+
+os.environ["XLA_FLAGS"] = (
+    "--xla_backend_extra_options="
+    "xla_cpu_small_while_loop_byte_threshold=16384"
+)
+~~~
 
 <a name="license"></a>
 ## License

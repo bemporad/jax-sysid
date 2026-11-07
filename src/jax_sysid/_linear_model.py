@@ -44,7 +44,7 @@ class LinearModel(Model):
             If y_in_x=True, provided values for C and D are ignored.
             If y_in_x=False and feedthrough=False, provided value for D is ignored.
         stability: bool
-            If True, set the state-transition matrix to A/max(abs(eig(A)),1) to guarantee system stability.
+            If True, set the state-transition matrix to A/max(||A||_2,1), so that ||A||_2 <= 1 and hence all eigenvalues of A lie in the closed unit disk.
         """
 
         super().__init__(nx, ny, nu, state_fcn=None, output_fcn=None, y_in_x=y_in_x, Ts=Ts)
@@ -64,7 +64,7 @@ class LinearModel(Model):
         self.init(params=params, x0=x0, sigma=sigma, seed=seed)
         self.sigma = sigma  # required by parallel_fit()
 
-        self.isStable = stability # If True, A matrix is trained as A/max(|eig(A)|,1) to enforce stability
+        self.isStable = stability # If True, A matrix is trained as A/max(||A||_2,1) to enforce stability
         if not self.isStable:
             @jax.jit
             def state_fcn(x, u, params):
@@ -188,20 +188,25 @@ class LinearModel(Model):
         return
 
     def force_stability(self, rho_A=1.e3, epsilon_A=1.e-3):
-        """Force stability of the linear state-space model by imposing the soft constraint ||A||_2 <= 1 as the state-transition matrix.
+        """Attempt to force stability of the linear state-space model by imposing the soft constraint ||A||_2 <= 1 on the state-transition matrix A.
 
         The constraint ||A||_2 <= 1 is mapped into the following custom regularization term in the optimization problem:
 
-        rho_A * max{||A||_2^2 − 1 + epsilon_A, 0}^2
+        rho_A * max{||A||_2^2 - 1 + epsilon_A, 0}^2
 
         where rho_A is a large penalty and epsilon_A is a small positive number used to tighten the constraint.
+        As the constraint is soft, stability is not guaranteed.
+
+        The penalty is stored as the custom regularization term: it replaces any custom regularization
+        previously defined, and is replaced by a later call to loss(custom_regularization=...).
+        Call this method before fit().
 
         Parameters
         ----------
         rho_A : float
             Penalty coefficient
         epsilon_A : float
-            Tolerance for the constraint ||A||_2 <= 1
+            Tightening of the constraint, which becomes ||A||_2^2 <= 1 - epsilon_A
         """
 
         if self.isStable:

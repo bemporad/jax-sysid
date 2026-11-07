@@ -179,7 +179,7 @@ model.fit([Ys1, Ys2, Ys3], [Us1, Us2, Us3])
 In case the initial state $x_0$ is trainable, one initial state per experiment is optimized. To avoid training the initial state, add `train_x0=False` when calling `model.loss`.
 
 #### Stability
-To attempt forcing that the identified linear model is stable, i.e., that matrix $A$ has all eigenvalues inside the unit disk, there are two methods. The first method uses $A$/max($\|A\|_2$,1) as the state-transition matrix and is simply used by setting the flag `stability` at construction:
+To attempt forcing that the identified linear model is stable, i.e., that matrix $A$ has all eigenvalues inside the unit disk, there are two methods, both based on the condition $\|A\|_2\leq1$. The first method uses $A$/max($\|A\|_2$,1) as the state-transition matrix and is simply used by setting the flag `stability` at construction:
 
 ~~~python
 model = LinearModel(nx, ny, nu, stability=True)

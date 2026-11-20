@@ -11,7 +11,7 @@ import jax.numpy as jnp
 import jaxopt
 import diffrax
 from joblib import Parallel, delayed, cpu_count
-from jax_sysid.utils import lbfgs_options, compute_scores
+from jax_sysid.utils import lbfgs_options, compute_scores, vec_reshape
 from ._model import Model
 from ._solvers import lbfgs_callback
 
@@ -89,8 +89,8 @@ class CTModel(Model):
             for k in range(self.nu):
                 if iszoh:
                     # ZOH interpolation, with u(t) = u[k] for t in [Tu[k],Tu[k+1])
-                    Tc, Uc = diffrax.rectilinear_interpolation(np.hstack((
-                        -(Tu[1]-Tu[0]),Tu)), np.hstack((U[:,k],U[-1,k])))
+                    Tc, Uc = diffrax.rectilinear_interpolation(jnp.hstack((
+                        -(Tu[1]-Tu[0]),Tu)), jnp.hstack((U[:,k],U[-1,k])))
                     input_fcn.append(diffrax.LinearInterpolation(ts=Tc, ys=Uc))
                 else:
                     input_fcn.append(diffrax.LinearInterpolation(ts=Tu, ys=U[:,k]))
@@ -166,7 +166,7 @@ class CTModel(Model):
             self.custom_regularization = custom_regularization
         return
 
-    def prepare_fit_(self, U, T, Tu):
+    def prepare_fit_(self, T, Tu):
         """Prepare the model for fitting by setting up the input-output data and the ODE solver.
         """
 
@@ -177,27 +177,19 @@ class CTModel(Model):
         if Tu is None:
             Tu = T
         self.Ty = T  # used to evaluate loss function
-
-        input_fcn = self.input_fcn_gen(Tu, U)
-        dt0 = self.dt0_fcn(Tu)
-
+        self.Tu = Tu 
+        
+        output_values = jax.vmap(self.output_fcn_ct, in_axes=[0, 0, 0, None])
+        
         @jax.jit
-        def dxdt(t, x, params):
-            u = jnp.array([input_fcn[k].evaluate(t) for k in range(self.nu)]).reshape(self.nu)
-            return self.state_fcn_ct(x, u, t, params)
+        def state_prediction(x, U, T, Tu, params):
+            input_fcn = self.input_fcn_gen(Tu, U)
+            dt0 = self.dt0_fcn(Tu)
+                    
+            def dxdt(t, x, params):
+                u = jnp.array([input_fcn[k].evaluate(t) for k in range(self.nu)]).reshape(self.nu)
+                return self.state_fcn_ct(x, u, t, params)
 
-        @jax.jit
-        def state_fcn(x, u, params):
-            return x  # do nothing, just return the state
-        self.state_fcn = state_fcn
-
-        # evaluate input at output sample points
-        Uy = jnp.array([input_fcn[k].evaluate(T) for k in range(self.nu)]).reshape(-1,self.nu)
-        output_values = jax.jit(
-            jax.vmap(self.output_fcn_ct, in_axes=[0, 0, 0, None]))
-
-        @jax.jit
-        def state_prediction(x, u, params):
             term = diffrax.ODETerm(dxdt)
             t0 = T[0]
             t1 = T[-1]
@@ -209,38 +201,65 @@ class CTModel(Model):
                 sol = diffrax.diffeqsolve(term, self.ode_solver, t0=t0, t1=t1, dt0=dt0, y0=x, args=params,
                                           saveat=saveat, max_steps=self.max_steps, stepsize_controller=self.stepsize_controller)
             return sol.ys  # state sequence
-        self.state_prediction = state_prediction
 
         @jax.jit
-        def output_fcn(x, u, params):
-            X = state_prediction(x, u, params)
-            # return the entire (possibly multivariate) output sequence as one vector
-            return output_values(X, Uy, T, params).reshape(-1)
+        def output_prediction(x, U, T, Tu, params):
+            X = state_prediction(x, U, T, Tu, params)
+            input_fcn = self.input_fcn_gen(Tu, U)
+            
+            # evaluate input at output sample points
+            Uy = jnp.array([input_fcn[k].evaluate(T) for k in range(self.nu)]).reshape(-1,self.nu)
+            
+            # return the entire (possibly multivariate) output sequence
+            return output_values(X, Uy, T, params)
 
-        self.output_fcn = output_fcn
-        return
+        self._state_prediction = state_prediction
+        self._output_prediction = output_prediction
+
+    def _predict_experiments(self, x0, U, params, forward_step):
+        """Compute predictions for the full batch of experiments"""
+        return jax.vmap(
+            self._output_prediction, in_axes=[0, 0, None, None, None])(
+                jnp.stack(x0), jnp.stack(U), self.Ty, self.Tu, params)
+
+    def _predict_state_trajectory(self, x0, U):
+            return self._state_prediction(
+                x0, U, self.Ty, self.Tu, self.params)
 
     def fit(self, Y, U, T, Tu=None):
-        """Fit the continuous-time model to input-output data.
+        """Fit the continuous-time model to input-output data for a single experiment or a list of equal-shaped experiments.
         The model is trained by integrating the state-update function using an ODE solver from the diffrax library.
 
         Parameters
         ----------
-        Y : ndarray
-            Training dataset: output data. Y must be a N-by-ny numpy array.
-        U : ndarray
-            Training dataset: input data. U must be a N-by-nu numpy array.
+        Y : ndarray or list of ndarrays
+            Training dataset: output data. Y must be a N-by-ny numpy array, or list of equal sized N-by-ny arrays.
+        U : ndarray or list of ndarrays
+            Training dataset: input data. U must be a N-by-nu numpy array, or list of equal sized N-by-nu arrays.
         T: ndarray
-            Time points corresponding to the output data.
+            Time points corresponding to the output data (shared across experiments).
         Tu: ndarray
-            Time points corresponding to the input data. If None, Tu=T.
+            Time points corresponding to the input data (shared across experiments). If None, Tu=T.
         """
 
-        self.prepare_fit_(U=U, T=T, Tu=Tu)
+        U_experiments = list(U) if isinstance(U, list) else [U]
+        Y_experiments = list(Y) if isinstance(Y, list) else [Y]
+        if not U_experiments or len(U_experiments) != len(Y_experiments):
+            raise ValueError("Y and U must have the same number of experiments")
 
-        super().fit(Y.reshape(1, -1), jnp.zeros((1, self.nu)))  # pass dummy input data
+        U_experiments = [jnp.asarray(vec_reshape(u)) for u in U_experiments]
+        Y_experiments = [jnp.asarray(vec_reshape(y)) for y in Y_experiments]
 
-        return
+        if any(u.shape != U_experiments[0].shape for u in U_experiments):
+            raise ValueError("All experiment inputs must have equal shape")
+        if any(y.shape != Y_experiments[0].shape for y in Y_experiments):
+            raise ValueError("All experiment outputs must have equal shape")
+
+        T = jnp.asarray(T)
+        Tu = T if Tu is None else jnp.asarray(Tu)
+
+        self.prepare_fit_(T, Tu)
+        super().fit(Y_experiments, U_experiments)
 
     def parallel_fit(
             self, Y, U, T, Tu=None, init_fcn=None, seeds=None, n_jobs=None):
@@ -251,14 +270,14 @@ class CTModel(Model):
 
         Parameters
         ----------
-        Y : ndarray
-            Training dataset: output data. Y must be a N-by-ny numpy array.
-        U : ndarray
-            Training dataset: input data. U must be a N-by-nu numpy array.
+        Y : ndarray or list of ndarrays
+            Training dataset: output data. Y must be a N-by-ny numpy array, or list of equal sized N-by-ny arrays.
+        U : ndarray or list of ndarrays
+            Training dataset: input data. U must be a N-by-nu numpy array, or list of equal sized N-by-nu arrays.
         T: ndarray
-            Time points corresponding to the output data.
+            Time points corresponding to the output data (shared across experiments).
         Tu: ndarray
-            Time points corresponding to the input data. If None, Tu=T.
+            Time points corresponding to the input data (shared across experiments). If None, Tu=T.
         init_fcn : function
             A function that initializes the model parameters given a seed.
         seeds : array
@@ -270,8 +289,6 @@ class CTModel(Model):
         --------
             list: A list of fitted models.
         """
-
-        self.prepare_fit_(U=U, T=T, Tu=Tu)
 
         if n_jobs is None:
             n_jobs = cpu_count()  # Use all available cores by default
@@ -287,7 +304,7 @@ class CTModel(Model):
             #     print(
             #         "\033[1m" + f"Fitting model with seed = {seed} ... " + "\033[0m")
 
-            Model.fit(self, Y.reshape(-1), jnp.zeros((1, self.nu))) # pass dummy input data
+            self.fit(Y, U, T, Tu)
 
             # if self.iprint > -1:
             #     print("\033[1m" + f"Seed = {seed}: done." + "\033[0m")
@@ -321,9 +338,9 @@ class CTModel(Model):
         if Tu is None:
             Tu = T
 
-        self.prepare_fit_(U=U, T=T, Tu=Tu)
+        self.prepare_fit_(T=T, Tu=Tu)
 
-        X = self.state_prediction(x0, None, self.params)
+        X = self._state_prediction(x0, U, T, Tu, self.params)
 
         # evaluate input at output sample points
         input_fcn = self.input_fcn_gen(Tu, U)
@@ -363,7 +380,7 @@ class CTModel(Model):
         if Tu is None:
             Tu = T
 
-        self.prepare_fit_(U=U, T=T, Tu=Tu)
+        self.prepare_fit_(T=T, Tu=Tu)
         self.Ty = T
 
         options = lbfgs_options(
@@ -377,7 +394,7 @@ class CTModel(Model):
 
         @jax.jit
         def J(x0):
-            X = self.state_prediction(x0, None, self.params)
+            X = self._state_prediction(x0, U, T, Tu, self.params)
             Yhat = output_values(X, U, T, self.params)
             loss = self.output_loss(Yhat, Y)
             loss += 0.5*rho_x0*jnp.sum(x0**2)
@@ -388,7 +405,8 @@ class CTModel(Model):
         options["disp"] = False
         solver = jaxopt.ScipyMinimize(
             fun=J, tol=options["ftol"], method="L-BFGS-B", maxiter=options["maxfun"], options=options, callback=cb)
-        x, state = solver.run(self.x0)
+        x0_init = self.x0[0] if isinstance(self.x0, list) else self.x0
+        x, state = solver.run(x0_init)
         if cb_final is not None:
             cb_final(state.fun_val)
         x = np.array(x)

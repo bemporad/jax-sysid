@@ -633,7 +633,9 @@ We thank Roland Toth for suggesting the use of Kung's method for initializing li
     author={A. Bemporad},
     title={An {L-BFGS-B} approach for linear and nonlinear system identification under $\ell_1$ and group-Lasso regularization},
     journal = {IEEE Transactions on Automatic Control},
-    note = {in press. Also available on arXiv at \url{http://arxiv.org/abs/2403.03827}},
+    volume = 70,
+    number = 7,
+    pages = {4857--4864},
     year=2025
 }
 ```
